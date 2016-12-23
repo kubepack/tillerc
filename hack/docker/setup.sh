@@ -70,7 +70,7 @@ docker_push() {
 	fi
 
     if [[ "$(docker images -q appscode/$IMG:$TAG 2> /dev/null)" != "" ]]; then
-        docker_up $IMG:$TAG
+        docker push appscode/$IMG:$TAG
     fi
 }
 
