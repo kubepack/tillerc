@@ -8,11 +8,10 @@ import (
 	_ "github.com/appscode/tillerc/api/install"
 	"github.com/appscode/tillerc/pkg/watcher"
 	"github.com/spf13/pflag"
-	"k8s.io/kubernetes/pkg/client/unversioned/clientcmd"
-	clientcmdapi "k8s.io/kubernetes/pkg/client/unversioned/clientcmd/api"
 	"k8s.io/kubernetes/pkg/util/flag"
 	"k8s.io/kubernetes/pkg/util/runtime"
 	"k8s.io/kubernetes/pkg/version/verflag"
+	"k8s.io/kubernetes/pkg/client/restclient"
 )
 
 func main() {
@@ -25,9 +24,7 @@ func main() {
 
 	verflag.PrintAndExitIfRequested()
 
-	defer runtime.HandleCrash()
-
-	// ref; https://github.com/kubernetes/kubernetes/blob/ba1666fb7b946febecfc836465d22903b687118e/cmd/kube-proxy/app/server.go#L168
+/*	// ref; https://github.com/kubernetes/kubernetes/blob/ba1666fb7b946febecfc836465d22903b687118e/cmd/kube-proxy/app/server.go#L168
 	// Create a Kube Client
 	// define api config source
 	if KubeConfig == "" && Master == "" {
@@ -40,8 +37,13 @@ func main() {
 		&clientcmd.ConfigOverrides{ClusterInfo: clientcmdapi.Cluster{Server: Master}}).ClientConfig()
 	if err != nil {
 		panic(err)
-	}
+	}*/
 
+	c, err := restclient.InClusterConfig()
+	if err != nil {
+		panic(err)
+	}
+	defer runtime.HandleCrash()
 	w := watcher.New(c)
 	log.Println("Starting tillerc...")
 	w.RunAndHold()
