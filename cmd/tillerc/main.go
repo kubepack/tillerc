@@ -1,73 +1,53 @@
 package main
 
 import (
+	"log"
 	_ "net/http/pprof"
-	"os"
 
-	"github.com/appscode/errors"
-	err_logger "github.com/appscode/errors/h/log"
-	v "github.com/appscode/go/version"
-	"github.com/appscode/log"
 	logs "github.com/appscode/log/golog"
-	"github.com/appscode/tillerc/cmd/tillerc/app"
-	"github.com/appscode/tillerc/cmd/tillerc/app/options"
-	"github.com/mikespook/golib/signal"
+	_ "github.com/appscode/tillerc/api/install"
+	"github.com/appscode/tillerc/pkg/watcher"
 	"github.com/spf13/pflag"
+	"k8s.io/kubernetes/pkg/client/unversioned/clientcmd"
+	clientcmdapi "k8s.io/kubernetes/pkg/client/unversioned/clientcmd/api"
 	"k8s.io/kubernetes/pkg/util/flag"
+	"k8s.io/kubernetes/pkg/util/runtime"
 	"k8s.io/kubernetes/pkg/version/verflag"
 )
 
-var (
-	Version         string
-	VersionStrategy string
-	Os              string
-	Arch            string
-	CommitHash      string
-	GitBranch       string
-	GitTag          string
-	CommitTimestamp string
-	BuildTimestamp  string
-	BuildHost       string
-	BuildHostOs     string
-	BuildHostArch   string
-)
-
-func init() {
-	v.Version.Version = Version
-	v.Version.VersionStrategy = VersionStrategy
-	v.Version.Os = Os
-	v.Version.Arch = Arch
-	v.Version.CommitHash = CommitHash
-	v.Version.GitBranch = GitBranch
-	v.Version.GitTag = GitTag
-	v.Version.CommitTimestamp = CommitTimestamp
-	v.Version.BuildTimestamp = BuildTimestamp
-	v.Version.BuildHost = BuildHost
-	v.Version.BuildHostOs = BuildHostOs
-	v.Version.BuildHostArch = BuildHostArch
-}
-
 func main() {
-	config := options.NewConfig()
-	config.AddFlags(pflag.CommandLine)
+	pflag.StringVar(&Master, "master", "", "The address of the Kubernetes API server (overrides any value in kubeconfig)")
+	pflag.StringVar(&KubeConfig, "kubeconfig", "", "Path to kubeconfig file with authorization information (the master location is set by the master flag).")
 
 	flag.InitFlags()
 	logs.InitLogs()
 	defer logs.FlushLogs()
-	errors.Handlers.Add(err_logger.LogHandler{})
 
 	verflag.PrintAndExitIfRequested()
 
-	if config.ProviderName == "" ||
-		config.ClusterName == "" ||
-		config.LoadbalancerImageName == "" {
-		log.Fatalln("Required flag not provided.")
+	defer runtime.HandleCrash()
+
+	// ref; https://github.com/kubernetes/kubernetes/blob/ba1666fb7b946febecfc836465d22903b687118e/cmd/kube-proxy/app/server.go#L168
+	// Create a Kube Client
+	// define api config source
+	if KubeConfig == "" && Master == "" {
+		log.Println("Neither --kubeconfig nor --master was specified.  Using default API client.  This might not work.")
+	}
+	// This creates a client, first loading any specified kubeconfig
+	// file, and then overriding the Master flag, if non-empty.
+	c, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		&clientcmd.ClientConfigLoadingRules{ExplicitPath: KubeConfig},
+		&clientcmd.ConfigOverrides{ClusterInfo: clientcmdapi.Cluster{Server: Master}}).ClientConfig()
+	if err != nil {
+		panic(err)
 	}
 
-	log.Infoln("Starting tillerc Controller...")
-	go app.Run(config)
-
-	sig := signal.New(nil)
-	sig.Bind(os.Interrupt, func() uint { return signal.BreakExit })
-	sig.Wait()
+	w := watcher.New(c)
+	log.Println("Starting tillerc...")
+	w.RunAndHold()
 }
+
+var (
+	Master     string
+	KubeConfig string
+)

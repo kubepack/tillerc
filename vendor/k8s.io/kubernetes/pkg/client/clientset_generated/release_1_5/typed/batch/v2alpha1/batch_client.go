@@ -18,6 +18,7 @@ package v2alpha1
 
 import (
 	fmt "fmt"
+
 	api "k8s.io/kubernetes/pkg/api"
 	unversioned "k8s.io/kubernetes/pkg/api/unversioned"
 	registered "k8s.io/kubernetes/pkg/apimachinery/registered"

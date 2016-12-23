@@ -2,98 +2,65 @@ package watcher
 
 import (
 	"reflect"
-	"sync"
 	"time"
 
+	"github.com/appscode/log"
+	hapi "github.com/appscode/tillerc/api"
 	acs "github.com/appscode/tillerc/client/clientset"
-	"github.com/appscode/tillerc/pkg/events"
-	"github.com/appscode/tillerc/pkg/stash"
-	kapi "k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/client/cache"
-	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
-	"k8s.io/kubernetes/pkg/fields"
+	rest "k8s.io/kubernetes/pkg/client/restclient"
 	"k8s.io/kubernetes/pkg/runtime"
+	"k8s.io/kubernetes/pkg/util/wait"
+	"k8s.io/kubernetes/pkg/watch"
 )
 
 type Watcher struct {
-	// kubernetes client to apiserver
-	Client clientset.Interface
-
-	// client for getting the appscode extensions
-	AppsCodeExtensionClient *acs.AppsCodeExtensionsClient
-
+	Client *acs.ExtensionsClient
 	// sync time to sync the list.
 	SyncPeriod time.Duration
-
-	// lister store
-	Storage *stash.Storage
-
-	Dispatch func(e *events.Event) error
-
-	sync.Mutex
 }
 
-func (k *Watcher) Cache(resource events.ObjectType, object runtime.Object, lw *cache.ListWatch) (cache.Store, *cache.Controller) {
-	var listWatch *cache.ListWatch
-	if lw != nil {
-		listWatch = lw
-	} else {
-		listWatch = cache.NewListWatchFromClient(k.Client.Core().RESTClient(), resource.String(), kapi.NamespaceAll, fields.Everything())
+func New(c *rest.Config) *Watcher {
+	return &Watcher{
+		Client:     acs.NewExtensionsForConfigOrDie(c),
+		SyncPeriod: time.Minute * 2,
 	}
-
-	return cache.NewInformer(
-		listWatch,
-		object,
-		k.SyncPeriod,
-		eventHandlerFuncs(k),
-	)
 }
 
-func (k *Watcher) CacheStore(resource events.ObjectType, object runtime.Object, lw *cache.ListWatch) (cache.Store, *cache.Controller) {
-	if lw == nil {
-		lw = cache.NewListWatchFromClient(k.Client.Core().RESTClient(), resource.String(), kapi.NamespaceAll, fields.Everything())
-	}
-
-	return stash.NewInformerPopulated(
-		lw,
-		object,
-		k.SyncPeriod,
-		eventHandlerFuncs(k),
-	)
-}
-
-func (k *Watcher) CacheIndexer(resource events.ObjectType, object runtime.Object, lw *cache.ListWatch, indexers cache.Indexers) (cache.Indexer, *cache.Controller) {
-	if lw == nil {
-		lw = cache.NewListWatchFromClient(k.Client.Core().RESTClient(), resource.String(), kapi.NamespaceAll, fields.Everything())
-	}
-	if indexers == nil {
-		indexers = cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}
-	}
-
-	return stash.NewIndexerInformerPopulated(
-		lw,
-		object,
-		k.SyncPeriod,
-		eventHandlerFuncs(k),
-		indexers,
-	)
-}
-
-func eventHandlerFuncs(k *Watcher) cache.ResourceEventHandlerFuncs {
-	return cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			e := events.New(events.Added, obj)
-			k.Dispatch(e)
+// Blocks caller. Intended to be called as a Go routine.
+func (w *Watcher) RunAndHold() {
+	lw := &cache.ListWatch{
+		ListFunc: func(opts api.ListOptions) (runtime.Object, error) {
+			return w.Client.Release(api.NamespaceAll).List(api.ListOptions{})
 		},
-		DeleteFunc: func(obj interface{}) {
-			e := events.New(events.Deleted, obj)
-			k.Dispatch(e)
-		},
-		UpdateFunc: func(old, new interface{}) {
-			if !reflect.DeepEqual(old, new) {
-				e := events.New(events.Updated, old, new)
-				k.Dispatch(e)
-			}
+		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+			return w.Client.Release(api.NamespaceAll).Watch(api.ListOptions{})
 		},
 	}
+	_, controller := cache.NewInformer(lw,
+		&api.Endpoints{},
+		w.SyncPeriod,
+		cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				log.Infoln("got one added event", obj.(hapi.Release))
+				w.doStuff(obj.(api.Endpoints))
+			},
+			DeleteFunc: func(obj interface{}) {
+				log.Infoln("got one deleted event", obj.(hapi.Release))
+				w.doStuff(obj.(api.Endpoints))
+			},
+			UpdateFunc: func(old, new interface{}) {
+				if !reflect.DeepEqual(old, new) {
+					log.Infoln("got one updated event", new.(hapi.Release))
+					w.doStuff(new.(api.Endpoints))
+				}
+			},
+		},
+	)
+	controller.Run(wait.NeverStop)
+}
+
+func (pl *Watcher) doStuff(endpoint api.Endpoints) {
+
 }

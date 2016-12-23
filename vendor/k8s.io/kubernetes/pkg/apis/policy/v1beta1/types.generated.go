@@ -24,14 +24,15 @@ package v1beta1
 import (
 	"errors"
 	"fmt"
+	"reflect"
+	"runtime"
+	time "time"
+
 	codec1978 "github.com/ugorji/go/codec"
 	pkg2_unversioned "k8s.io/kubernetes/pkg/api/unversioned"
 	pkg3_v1 "k8s.io/kubernetes/pkg/api/v1"
 	pkg4_types "k8s.io/kubernetes/pkg/types"
 	pkg1_intstr "k8s.io/kubernetes/pkg/util/intstr"
-	"reflect"
-	"runtime"
-	time "time"
 )
 
 const (

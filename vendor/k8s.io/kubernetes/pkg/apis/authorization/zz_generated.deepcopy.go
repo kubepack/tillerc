@@ -21,10 +21,11 @@ limitations under the License.
 package authorization
 
 import (
+	reflect "reflect"
+
 	api "k8s.io/kubernetes/pkg/api"
 	conversion "k8s.io/kubernetes/pkg/conversion"
 	runtime "k8s.io/kubernetes/pkg/runtime"
-	reflect "reflect"
 )
 
 func init() {

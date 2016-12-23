@@ -21,12 +21,13 @@ limitations under the License.
 package extensions
 
 import (
+	reflect "reflect"
+
 	api "k8s.io/kubernetes/pkg/api"
 	unversioned "k8s.io/kubernetes/pkg/api/unversioned"
 	conversion "k8s.io/kubernetes/pkg/conversion"
 	runtime "k8s.io/kubernetes/pkg/runtime"
 	intstr "k8s.io/kubernetes/pkg/util/intstr"
-	reflect "reflect"
 )
 
 func init() {

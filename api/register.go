@@ -30,8 +30,8 @@ var (
 // Adds the list of known types to api.Scheme.
 func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
-		&Certificate{},
-		&CertificateList{},
+		&Release{},
+		&ReleaseList{},
 
 		&api.ListOptions{},
 		&api.DeleteOptions{},
@@ -39,5 +39,5 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 	return nil
 }
 
-func (obj *Certificate) GetObjectKind() schema.ObjectKind     { return &obj.TypeMeta }
-func (obj *CertificateList) GetObjectKind() schema.ObjectKind { return &obj.TypeMeta }
+func (obj *Release) GetObjectKind() schema.ObjectKind     { return &obj.TypeMeta }
+func (obj *ReleaseList) GetObjectKind() schema.ObjectKind { return &obj.TypeMeta }
