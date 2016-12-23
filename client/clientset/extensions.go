@@ -68,15 +68,15 @@ func setExtensionsDefaults(config *rest.Config) error {
 	}
 	// if appscode.com/v1beta1 is not enabled, return an error
 	if !registered.IsEnabledVersion(gv) {
-		return errors.New("appscode.com/v1beta1 is not enabled")
+		return errors.New("helm.sh/v1beta1 is not enabled")
 	}
 	config.APIPath = defaultAPIPath
 	if config.UserAgent == "" {
 		config.UserAgent = rest.DefaultKubernetesUserAgent()
 	}
 
-	if config.GroupVersion == nil || config.GroupVersion.Group != "appscode.com" {
-		g, err := registered.Group("appscode.com")
+	if config.GroupVersion == nil || config.GroupVersion.Group != "helm.sh" {
+		g, err := registered.Group("helm.sh")
 		if err != nil {
 			return err
 		}

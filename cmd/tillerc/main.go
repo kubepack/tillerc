@@ -1,14 +1,14 @@
 package main
 
 import (
-	"log"
-	_ "net/http/pprof"
+	"fmt"
+	"time"
 
 	logs "github.com/appscode/log/golog"
 	_ "github.com/appscode/tillerc/api/install"
 	"github.com/appscode/tillerc/pkg/watcher"
 	"github.com/spf13/pflag"
-	"k8s.io/kubernetes/pkg/client/restclient"
+	"k8s.io/kubernetes/pkg/client/unversioned/clientcmd"
 	"k8s.io/kubernetes/pkg/util/flag"
 	"k8s.io/kubernetes/pkg/util/runtime"
 	"k8s.io/kubernetes/pkg/version/verflag"
@@ -39,13 +39,18 @@ func main() {
 			panic(err)
 		}*/
 
-	c, err := restclient.InClusterConfig()
+	rules := clientcmd.NewDefaultClientConfigLoadingRules()
+	rules.DefaultClientConfig = &clientcmd.DefaultClientConfig
+	overrides := &clientcmd.ConfigOverrides{ClusterDefaults: clientcmd.ClusterDefaults}
+	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, overrides).ClientConfig()
 	if err != nil {
+		fmt.Println("Could not get kubernetes config: %s", err)
+		time.Sleep(30 * time.Minute)
 		panic(err)
 	}
 	defer runtime.HandleCrash()
-	w := watcher.New(c)
-	log.Println("Starting tillerc...")
+	w := watcher.New(config)
+	fmt.Println("Starting tillerc...")
 	w.RunAndHold()
 }
 
