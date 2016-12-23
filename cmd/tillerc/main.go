@@ -8,6 +8,7 @@ import (
 	_ "github.com/appscode/tillerc/api/install"
 	"github.com/appscode/tillerc/pkg/watcher"
 	"github.com/spf13/pflag"
+	"k8s.io/kubernetes/pkg/client/restclient"
 	"k8s.io/kubernetes/pkg/client/unversioned/clientcmd"
 	"k8s.io/kubernetes/pkg/util/flag"
 	"k8s.io/kubernetes/pkg/util/runtime"
@@ -39,10 +40,13 @@ func main() {
 			panic(err)
 		}*/
 
-	rules := clientcmd.NewDefaultClientConfigLoadingRules()
-	rules.DefaultClientConfig = &clientcmd.DefaultClientConfig
-	overrides := &clientcmd.ConfigOverrides{ClusterDefaults: clientcmd.ClusterDefaults}
-	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, overrides).ClientConfig()
+	config, err := restclient.InClusterConfig()
+	if err != nil {
+		rules := clientcmd.NewDefaultClientConfigLoadingRules()
+		rules.DefaultClientConfig = &clientcmd.DefaultClientConfig
+		overrides := &clientcmd.ConfigOverrides{ClusterDefaults: clientcmd.ClusterDefaults}
+		config, err = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, overrides).ClientConfig()
+	}
 	if err != nil {
 		fmt.Println("Could not get kubernetes config: %s", err)
 		time.Sleep(30 * time.Minute)
