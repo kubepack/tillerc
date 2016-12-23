@@ -1,0 +1,9 @@
+apiVersion: helm.sh/v1beta1
+kind: Release
+metadata:
+  name: busybox
+  labels:
+    app: busybox
+spec:
+  manifest: 'abcdefg'
+  disableHooks: false

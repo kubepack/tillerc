@@ -39,21 +39,21 @@ func (w *Watcher) RunAndHold() {
 		},
 	}
 	_, controller := cache.NewInformer(lw,
-		&api.Endpoints{},
+		&hapi.Release{},
 		w.SyncPeriod,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				log.Infoln("got one added event", obj.(hapi.Release))
-				w.doStuff(obj.(api.Endpoints))
+				w.doStuff(obj.(hapi.Release))
 			},
 			DeleteFunc: func(obj interface{}) {
 				log.Infoln("got one deleted event", obj.(hapi.Release))
-				w.doStuff(obj.(api.Endpoints))
+				w.doStuff(obj.(hapi.Release))
 			},
 			UpdateFunc: func(old, new interface{}) {
 				if !reflect.DeepEqual(old, new) {
 					log.Infoln("got one updated event", new.(hapi.Release))
-					w.doStuff(new.(api.Endpoints))
+					w.doStuff(new.(hapi.Release))
 				}
 			},
 		},
@@ -61,6 +61,6 @@ func (w *Watcher) RunAndHold() {
 	controller.Run(wait.NeverStop)
 }
 
-func (pl *Watcher) doStuff(endpoint api.Endpoints) {
+func (pl *Watcher) doStuff(release hapi.Release) {
 
 }
