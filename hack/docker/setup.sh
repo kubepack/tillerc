@@ -50,6 +50,7 @@ RUN set -x \
   && rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man /tmp/*
 
 COPY tillerc /tillerc
+ENTRYPOINT ["/tillerc"]
 EOL
 	local cmd="docker build -t appscode/$IMG:$TAG ."
 	echo $cmd; $cmd
