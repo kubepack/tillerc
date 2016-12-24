@@ -4,7 +4,9 @@ import:
 - package: k8s.io/kubernetes
   version: ~1.5.0
 - package: k8s.io/helm
-  version: ~2.1.0
+  version: b928088a8af01802054522d2206dd155587c355e
+- package: github.com/Masterminds/sprig
+  version: ^2.8
 testImport:
 - package: github.com/stretchr/testify
   version: v1.1.4

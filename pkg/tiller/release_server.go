@@ -17,6 +17,19 @@ limitations under the License.
 package tiller
 
 import (
+	"reflect"
+	"time"
+
+	hapi "github.com/appscode/tillerc/api"
+	hcs "github.com/appscode/tillerc/client/clientset"
+	"github.com/golang/glog"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/client/cache"
+	rest "k8s.io/kubernetes/pkg/client/restclient"
+	"k8s.io/kubernetes/pkg/runtime"
+	"k8s.io/kubernetes/pkg/util/wait"
+	"k8s.io/kubernetes/pkg/watch"
+
 	"bytes"
 	"errors"
 	"fmt"
@@ -26,18 +39,17 @@ import (
 	"strings"
 
 	ctx "golang.org/x/net/context"
-	"k8s.io/kubernetes/pkg/api/unversioned"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
-	"k8s.io/kubernetes/pkg/client/typed/discovery"
-
-	"github.com/appscode/tillerc/pkg/tiller/environment"
 	"k8s.io/helm/pkg/chartutil"
 	"k8s.io/helm/pkg/kube"
 	"k8s.io/helm/pkg/proto/hapi/chart"
 	"k8s.io/helm/pkg/proto/hapi/release"
 	"k8s.io/helm/pkg/proto/hapi/services"
 	relutil "k8s.io/helm/pkg/releaseutil"
+	"k8s.io/helm/pkg/tiller/environment"
 	"k8s.io/helm/pkg/timeconv"
+	"k8s.io/kubernetes/pkg/api/unversioned"
+	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
+	"k8s.io/kubernetes/pkg/client/typed/discovery"
 )
 
 // releaseNameMaxLen is the maximum length of a release name.
@@ -80,14 +92,56 @@ var ValidName = regexp.MustCompile("^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])+
 type ReleaseServer struct {
 	env       *environment.Environment
 	clientset internalclientset.Interface
+
+	Client *hcs.ExtensionsClient
+	// sync time to sync the list.
+	SyncPeriod time.Duration
 }
 
-// NewReleaseServer creates a new release server.
-func NewReleaseServer(env *environment.Environment, clientset internalclientset.Interface) *ReleaseServer {
+func New(env *environment.Environment, c *rest.Config) *ReleaseServer {
 	return &ReleaseServer{
-		env:       env,
-		clientset: clientset,
+		env:        env,
+		clientset:  internalclientset.NewForConfigOrDie(c),
+		Client:     hcs.NewExtensionsForConfigOrDie(c),
+		SyncPeriod: time.Minute * 2,
 	}
+}
+
+// Blocks caller. Intended to be called as a Go routine.
+func (s *ReleaseServer) RunAndHold() {
+	lw := &cache.ListWatch{
+		ListFunc: func(opts api.ListOptions) (runtime.Object, error) {
+			return s.Client.Release(api.NamespaceAll).List(api.ListOptions{})
+		},
+		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+			return s.Client.Release(api.NamespaceAll).Watch(api.ListOptions{})
+		},
+	}
+	_, controller := cache.NewInformer(lw,
+		&hapi.Release{},
+		s.SyncPeriod,
+		cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				glog.Infoln("got one added event", obj.(*hapi.Release))
+				s.doStuff(obj.(*hapi.Release))
+			},
+			DeleteFunc: func(obj interface{}) {
+				glog.Infoln("got one deleted event", obj.(*hapi.Release))
+				s.doStuff(obj.(*hapi.Release))
+			},
+			UpdateFunc: func(old, new interface{}) {
+				if !reflect.DeepEqual(old, new) {
+					glog.Infoln("got one updated event", new.(*hapi.Release))
+					s.doStuff(new.(*hapi.Release))
+				}
+			},
+		},
+	)
+	controller.Run(wait.NeverStop)
+}
+
+func (s *ReleaseServer) doStuff(release *hapi.Release) {
+
 }
 
 // UpdateRelease takes an existing release and new information, and upgrades the release.

@@ -51,7 +51,13 @@ type ReleaseSpec struct {
 	Hooks []*hapi_release.Hook `protobuf:"bytes,6,rep,name=hooks" json:"hooks,omitempty"`
 
 	// Version is an int32 which represents the version of the release.
-	ReleaseVersion int32 `protobuf:"varint,7,opt,name=version" json:"version,omitempty"`
+	Version int32 `protobuf:"varint,7,opt,name=version" json:"version,omitempty"`
+
+	// Performs pods restart for resources if applicable
+	Recreate bool `protobuf:"varint,6,opt,name=recreate" json:"recreate,omitempty"`
+
+	// timeout specifies the max amount of time any kubernetes client command can run.
+	Timeout int64 `protobuf:"varint,7,opt,name=timeout" json:"timeout,omitempty"`
 }
 
 type ReleaseStatus struct {

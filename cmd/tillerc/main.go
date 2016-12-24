@@ -5,9 +5,10 @@ import (
 	"time"
 
 	_ "github.com/appscode/tillerc/api/install"
-	"github.com/appscode/tillerc/pkg/watcher"
+	"github.com/appscode/tillerc/pkg/tiller"
 	"github.com/golang/glog"
 	"github.com/spf13/pflag"
+	"k8s.io/helm/pkg/tiller/environment"
 	"k8s.io/kubernetes/pkg/client/unversioned/clientcmd"
 	"k8s.io/kubernetes/pkg/util/flag"
 	"k8s.io/kubernetes/pkg/util/logs"
@@ -38,7 +39,8 @@ func main() {
 		panic(err)
 	}
 	defer runtime.HandleCrash()
-	w := watcher.New(config)
+
+	w := tiller.New(environment.New(), config)
 	fmt.Println("Starting tillerc...")
 	w.RunAndHold()
 }

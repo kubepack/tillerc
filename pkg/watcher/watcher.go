@@ -5,7 +5,7 @@ import (
 	"time"
 
 	hapi "github.com/appscode/tillerc/api"
-	acs "github.com/appscode/tillerc/client/clientset"
+	hcs "github.com/appscode/tillerc/client/clientset"
 	"github.com/golang/glog"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/client/cache"
@@ -15,15 +15,18 @@ import (
 	"k8s.io/kubernetes/pkg/watch"
 )
 
+/*
+This is not used anymore. This has been merged into the pkg/tiller#ReleaseServer
+*/
 type Watcher struct {
-	Client *acs.ExtensionsClient
+	Client *hcs.ExtensionsClient
 	// sync time to sync the list.
 	SyncPeriod time.Duration
 }
 
 func New(c *rest.Config) *Watcher {
 	return &Watcher{
-		Client:     acs.NewExtensionsForConfigOrDie(c),
+		Client:     hcs.NewExtensionsForConfigOrDie(c),
 		SyncPeriod: time.Minute * 2,
 	}
 }
