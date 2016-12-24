@@ -4,22 +4,24 @@ import (
 	"fmt"
 	"time"
 
-	"log"
-
-	logs "github.com/appscode/log/golog"
 	_ "github.com/appscode/tillerc/api/install"
 	"github.com/appscode/tillerc/pkg/watcher"
 	"github.com/spf13/pflag"
-	"k8s.io/kubernetes/pkg/client/restclient"
 	"k8s.io/kubernetes/pkg/client/unversioned/clientcmd"
 	"k8s.io/kubernetes/pkg/util/flag"
+	"k8s.io/kubernetes/pkg/util/logs"
 	"k8s.io/kubernetes/pkg/util/runtime"
 	"k8s.io/kubernetes/pkg/version/verflag"
 )
 
+var (
+	masterURL string
+	kubeconfigPath string
+)
+
 func main() {
-	pflag.StringVar(&Master, "master", "", "The address of the Kubernetes API server (overrides any value in kubeconfig)")
-	pflag.StringVar(&KubeConfig, "kubeconfig", "", "Path to kubeconfig file with authorization information (the master location is set by the master flag).")
+	pflag.StringVar(&masterURL, "master", "", "The address of the Kubernetes API server (overrides any value in kubeconfig)")
+	pflag.StringVar(&kubeconfigPath, "kubeconfig", "", "Path to kubeconfig file with authorization information (the master location is set by the master flag).")
 
 	flag.InitFlags()
 	logs.InitLogs()
@@ -27,24 +29,9 @@ func main() {
 
 	verflag.PrintAndExitIfRequested()
 
-	// ref; https://github.com/kubernetes/kubernetes/blob/ba1666fb7b946febecfc836465d22903b687118e/cmd/kube-proxy/app/server.go#L168
-	// Create a Kube Client
-	// define api config source
-	if KubeConfig == "" && Master == "" {
-		log.Println("Neither --kubeconfig nor --master was specified.  Using default API client.  This might not work.")
-	}
-
-	// This creates a client, first loading any specified kubeconfig
-	// file, and then overriding the Master flag, if non-empty.
-	config, err := restclient.InClusterConfig()
+	config, err := clientcmd.BuildConfigFromFlags(masterURL, kubeconfigPath)
 	if err != nil {
-		rules := clientcmd.NewDefaultClientConfigLoadingRules()
-		rules.DefaultClientConfig = &clientcmd.DefaultClientConfig
-		overrides := &clientcmd.ConfigOverrides{ClusterDefaults: clientcmd.ClusterDefaults}
-		config, err = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, overrides).ClientConfig()
-	}
-	if err != nil {
-		fmt.Println("Could not get kubernetes config: %s", err)
+		fmt.Printf("Could not get kubernetes config: %s", err)
 		time.Sleep(30 * time.Minute)
 		panic(err)
 	}
@@ -53,8 +40,3 @@ func main() {
 	fmt.Println("Starting tillerc...")
 	w.RunAndHold()
 }
-
-var (
-	Master     string
-	KubeConfig string
-)

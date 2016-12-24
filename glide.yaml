@@ -1,6 +1,5 @@
 package: github.com/appscode/tillerc
 import:
-- package: github.com/appscode/log
 - package: github.com/ghodss/yaml
 - package: k8s.io/kubernetes
   version: ~1.5.0

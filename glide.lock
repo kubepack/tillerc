@@ -1,10 +1,6 @@
-hash: 8787d1903ea229efc56680cca0392bfc600050a5602d4129234293864155d788
-updated: 2016-12-24T09:20:40.315312277-08:00
+hash: 07b1d3cd31ee6a703583b55f35a6f470ceeba4b2ca7b69a05f80293710b0cb0f
+updated: 2016-12-24T09:36:50.833048724-08:00
 imports:
-- name: github.com/appscode/log
-  version: 3f1acdeb89863d101e1d5fc0fefb478b1e990b28
-  subpackages:
-  - golog
 - name: github.com/blang/semver
   version: 31b736133b98f26d5e078ec9eb591666edfd091f
 - name: github.com/davecgh/go-spew
@@ -221,6 +217,7 @@ imports:
   - pkg/util/intstr
   - pkg/util/json
   - pkg/util/labels
+  - pkg/util/logs
   - pkg/util/net
   - pkg/util/parsers
   - pkg/util/rand

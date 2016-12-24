@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/appscode/log"
 	hapi "github.com/appscode/tillerc/api"
 	acs "github.com/appscode/tillerc/client/clientset"
+	"github.com/golang/glog"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/client/cache"
 	rest "k8s.io/kubernetes/pkg/client/restclient"
@@ -43,16 +43,16 @@ func (w *Watcher) RunAndHold() {
 		w.SyncPeriod,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				log.Infoln("got one added event", obj.(*hapi.Release))
+				glog.Infoln("got one added event", obj.(*hapi.Release))
 				w.doStuff(obj.(*hapi.Release))
 			},
 			DeleteFunc: func(obj interface{}) {
-				log.Infoln("got one deleted event", obj.(*hapi.Release))
+				glog.Infoln("got one deleted event", obj.(*hapi.Release))
 				w.doStuff(obj.(*hapi.Release))
 			},
 			UpdateFunc: func(old, new interface{}) {
 				if !reflect.DeepEqual(old, new) {
-					log.Infoln("got one updated event", new.(*hapi.Release))
+					glog.Infoln("got one updated event", new.(*hapi.Release))
 					w.doStuff(new.(*hapi.Release))
 				}
 			},
