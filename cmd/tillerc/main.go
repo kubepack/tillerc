@@ -6,16 +6,16 @@ import (
 
 	_ "github.com/appscode/tillerc/api/install"
 	"github.com/appscode/tillerc/pkg/watcher"
+	"github.com/golang/glog"
 	"github.com/spf13/pflag"
 	"k8s.io/kubernetes/pkg/client/unversioned/clientcmd"
 	"k8s.io/kubernetes/pkg/util/flag"
 	"k8s.io/kubernetes/pkg/util/logs"
 	"k8s.io/kubernetes/pkg/util/runtime"
-	"k8s.io/kubernetes/pkg/version/verflag"
 )
 
 var (
-	masterURL string
+	masterURL      string
 	kubeconfigPath string
 )
 
@@ -27,7 +27,9 @@ func main() {
 	logs.InitLogs()
 	defer logs.FlushLogs()
 
-	verflag.PrintAndExitIfRequested()
+	pflag.VisitAll(func(flag *pflag.Flag) {
+		glog.Infof("FLAG: --%s=%q", flag.Name, flag.Value)
+	})
 
 	config, err := clientcmd.BuildConfigFromFlags(masterURL, kubeconfigPath)
 	if err != nil {
