@@ -24,7 +24,7 @@ fi
 
 clean() {
     pushd $GOPATH/src/github.com/appscode/tillerc/hack/docker
-	rm -rf tillerc
+	rm tillerc Dockerfile
 	popd
 }
 
