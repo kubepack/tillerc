@@ -1,6 +1,9 @@
 # tillerc
 Helm Tiller Controller
 
+## Design Doc
+https://github.com/kubernetes/helm/issues/1586#issuecomment-268055664
+
 ## Build Instructions
 ```sh
 # dev build
