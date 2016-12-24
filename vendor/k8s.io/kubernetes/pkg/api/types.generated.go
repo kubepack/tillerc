@@ -24,10 +24,6 @@ package api
 import (
 	"errors"
 	"fmt"
-	"reflect"
-	"runtime"
-	time "time"
-
 	codec1978 "github.com/ugorji/go/codec"
 	pkg3_resource "k8s.io/kubernetes/pkg/api/resource"
 	pkg2_unversioned "k8s.io/kubernetes/pkg/api/unversioned"
@@ -36,6 +32,9 @@ import (
 	pkg7_runtime "k8s.io/kubernetes/pkg/runtime"
 	pkg1_types "k8s.io/kubernetes/pkg/types"
 	pkg4_intstr "k8s.io/kubernetes/pkg/util/intstr"
+	"reflect"
+	"runtime"
+	time "time"
 )
 
 const (

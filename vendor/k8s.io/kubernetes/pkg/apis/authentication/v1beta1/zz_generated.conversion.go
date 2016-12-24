@@ -21,11 +21,10 @@ limitations under the License.
 package v1beta1
 
 import (
-	unsafe "unsafe"
-
 	authentication "k8s.io/kubernetes/pkg/apis/authentication"
 	conversion "k8s.io/kubernetes/pkg/conversion"
 	runtime "k8s.io/kubernetes/pkg/runtime"
+	unsafe "unsafe"
 )
 
 func init() {
