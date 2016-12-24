@@ -24,12 +24,6 @@ type ReleaseInterface interface {
 	ReleaseExpansion
 }
 
-// TODO
-// DryRun, if true, will run through the release logic, but neither create
-// a release object nor deploy to Kubernetes. The release object returned
-// in the response will be fake.
-// DryRun bool `protobuf:"varint,3,opt,name=dry_run,json=dryRun" json:"dry_run,omitempty"` -----------------> Extension Method
-
 // releases implements ReleaseInterface
 type releases struct {
 	client rest.Interface

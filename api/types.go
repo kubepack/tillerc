@@ -21,25 +21,6 @@ type ChartSource struct {
 
 //------------------------------------------------------------
 
-/*
-type ReleaseSpec struct {
-    Chart Chart `protobuf:"bytes,1,opt,name=chart" json:"chart,omitempty"`
-    // Values is a string containing (unparsed) YAML values.
-    Values hapi_chart.Config `protobuf:"bytes,2,opt,name=values" json:"values,omitempty"`
-    // DryRun, if true, will run through the release logic, but neither create
-    // a release object nor deploy to Kubernetes. The release object returned
-    // in the response will be fake.
-    DryRun bool `protobuf:"varint,3,opt,name=dry_run,json=dryRun" json:"dry_run,omitempty"`
-    // Name is the candidate release name. This must be unique to the
-    // namespace, otherwise the server will return an error. If it is not
-    // supplied, the server will autogenerate one.
-    Name string `protobuf:"bytes,4,opt,name=name" json:"name,omitempty"`
-    // DisableHooks causes the server to skip running any hooks for the install.
-    DisableHooks bool `protobuf:"varint,5,opt,name=disable_hooks,json=disableHooks" json:"disable_hooks,omitempty"`
-}
-
-*/
-
 // Release describes a deployment of a chart, together with the chart
 // and the variables used to deploy that chart.
 type Release struct {
@@ -70,7 +51,7 @@ type ReleaseSpec struct {
 	Hooks []*hapi_release.Hook `protobuf:"bytes,6,rep,name=hooks" json:"hooks,omitempty"`
 
 	// Version is an int32 which represents the version of the release.
-	Version int32 `protobuf:"varint,7,opt,name=version" json:"version,omitempty"`
+	ReleaseVersion int32 `protobuf:"varint,7,opt,name=version" json:"version,omitempty"`
 }
 
 type ReleaseStatus struct {
@@ -88,4 +69,30 @@ type ReleaseList struct {
 	unversioned.TypeMeta `json:",inline"`
 	unversioned.ListMeta `json:"metadata,omitempty"`
 	Items                []Release `json:"items,omitempty"`
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+
+// ReleaseVersion captures the state of a individual release and are immutable.
+// ReleaseVersion replaces the version wise configmaps used by Tiller 2.0
+type ReleaseVersion struct {
+	unversioned.TypeMeta `json:",inline,omitempty"`
+	api.ObjectMeta       `json:"metadata,omitempty"`
+	Spec                 ReleaseVersionSpec   `json:"spec,omitempty"`
+	Status               ReleaseVersionStatus `json:"status,omitempty"`
+}
+
+type ReleaseVersionSpec struct {
+	ReleaseSpec ReleaseSpec `json:"inline,omitempty"`
+}
+
+type ReleaseVersionStatus struct {
+	Status   *hapi_release.Status `protobuf:"bytes,1,opt,name=status" json:"status,omitempty"`
+	Deployed unversioned.Time     `protobuf:"bytes,2,opt,name=first_deployed,json=firstDeployed" json:"first_deployed,omitempty"`
+}
+
+type ReleaseVersionList struct {
+	unversioned.TypeMeta `json:",inline"`
+	unversioned.ListMeta `json:"metadata,omitempty"`
+	Items                []ReleaseVersion `json:"items,omitempty"`
 }

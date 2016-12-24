@@ -21,6 +21,9 @@ func v1addKnownTypes(scheme *runtime.Scheme) error {
 		&Release{},
 		&ReleaseList{},
 
+		&ReleaseVersion{},
+		&ReleaseVersionList{},
+
 		&v1.ListOptions{},
 		&v1.DeleteOptions{},
 	)

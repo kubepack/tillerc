@@ -33,6 +33,9 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&Release{},
 		&ReleaseList{},
 
+		&ReleaseVersion{},
+		&ReleaseVersionList{},
+
 		&api.ListOptions{},
 		&api.DeleteOptions{},
 	)
@@ -41,3 +44,6 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 
 func (obj *Release) GetObjectKind() schema.ObjectKind     { return &obj.TypeMeta }
 func (obj *ReleaseList) GetObjectKind() schema.ObjectKind { return &obj.TypeMeta }
+
+func (obj *ReleaseVersion) GetObjectKind() schema.ObjectKind     { return &obj.TypeMeta }
+func (obj *ReleaseVersionList) GetObjectKind() schema.ObjectKind { return &obj.TypeMeta }

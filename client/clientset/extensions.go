@@ -15,6 +15,7 @@ const (
 type ExtensionInterface interface {
 	RESTClient() rest.Interface
 	ReleaseNamespacer
+	ReleaseVersionNamespacer
 }
 
 // AppsCodeExtensionsClient is used to interact with experimental Kubernetes features.
@@ -26,6 +27,10 @@ type ExtensionsClient struct {
 
 func (a *ExtensionsClient) Release(namespace string) ReleaseInterface {
 	return newRelease(a, namespace)
+}
+
+func (a *ExtensionsClient) ReleaseVersion(namespace string) ReleaseVersionInterface {
+	return newReleaseVersion(a, namespace)
 }
 
 // NewAppsCodeExtensions creates a new AppsCodeExtensionsClient for the given config. This client
@@ -57,7 +62,7 @@ func NewExtensionsForConfigOrDie(c *rest.Config) *ExtensionsClient {
 }
 
 // New creates a new ExtensionsV1beta1Client for the given RESTClient.
-func NewNewACExtensions(c rest.Interface) *ExtensionsClient {
+func NewNewExtensions(c rest.Interface) *ExtensionsClient {
 	return &ExtensionsClient{c}
 }
 
@@ -66,7 +71,7 @@ func setExtensionsDefaults(config *rest.Config) error {
 	if err != nil {
 		return err
 	}
-	// if appscode.com/v1beta1 is not enabled, return an error
+	// if helm.sh/v1beta1 is not enabled, return an error
 	if !registered.IsEnabledVersion(gv) {
 		return errors.New("helm.sh/v1beta1 is not enabled")
 	}
