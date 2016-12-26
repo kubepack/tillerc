@@ -16,7 +16,7 @@ import (
 type ChartSource struct {
 	// Inline charts are what is done today with Helm cli. Release request
 	// contains the chart definition in the release spec, sent by Helm cli.
-	Inline *hapi_chart.Chart `json:"inline,omitempty"`
+	Inline string `json:"inline,omitempty"`
 }
 
 //------------------------------------------------------------
@@ -31,7 +31,10 @@ type Release struct {
 }
 
 type ReleaseSpec struct {
-	// Chart is the protobuf representation of a chart.
+	// The ChartSource represents the location and type of a chart to install.
+	// This is modelled like Volume in Pods, which allows specifying a chart
+	// inline (like today) or pulling a chart object from a (potentially private)
+	// chart registry similar to pulling a Docker image.
 	Chart ChartSource `protobuf:"bytes,1,opt,name=chart" json:"chart,omitempty"`
 
 	//// Values is a string containing (unparsed) YAML values.
