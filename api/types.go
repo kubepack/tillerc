@@ -16,7 +16,7 @@ import (
 type ChartSource struct {
 	// Inline charts are what is done today with Helm cli. Release request
 	// contains the chart definition in the release spec, sent by Helm cli.
-	Inline string `json:"inline,omitempty"`
+	Inline *hapi_chart.Chart `json:"inline,omitempty"`
 }
 
 //------------------------------------------------------------
