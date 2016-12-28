@@ -38,6 +38,7 @@ import (
 	"regexp"
 	"strings"
 
+	tc_api "github.com/appscode/tillerc/api"
 	ctx "golang.org/x/net/context"
 	"k8s.io/helm/pkg/chartutil"
 	"k8s.io/helm/pkg/kube"
@@ -50,8 +51,6 @@ import (
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	"k8s.io/kubernetes/pkg/client/typed/discovery"
-	tc_api"github.com/appscode/tillerc/api"
-
 )
 
 // releaseNameMaxLen is the maximum length of a release name.
@@ -126,7 +125,9 @@ func (s *ReleaseServer) RunAndHold() {
 			AddFunc: func(obj interface{}) {
 				glog.Infoln("got one added event", obj.(*hapi.Release))
 				err := s.InstallRelease(obj.(*hapi.Release))
-				log.Print(err)
+				if err != nil {
+					log.Print(err)
+				}
 			},
 			DeleteFunc: func(obj interface{}) {
 				glog.Infoln("got one deleted event", obj.(*hapi.Release))
@@ -426,9 +427,6 @@ func (s *ReleaseServer) InstallRelease(rel *hapi.Release) error {
 			}*/
 		return err
 	}
-
-	fmt.Println("__________________________________10\n\n")
-
 	err = s.performRelease(rel)
 	if err != nil {
 		log.Printf("Failed install perform step: %s", err)
@@ -458,14 +456,12 @@ func (s *ReleaseServer) prepareRelease(rel *hapi.Release) error {
 		IsInstall: true,
 	}
 
-
 	valuesToRender, err := chartutil.ToRenderValues(rel.Spec.Chart.Inline, rel.Spec.Chart.Inline.Values, options) //TODO check rel.Spec.Config
 
 	if err != nil {
 
 		return err
 	}
-
 
 	hooks, manifestDoc, _, err := s.renderResources(rel.Spec.Chart.Inline, valuesToRender) // noteTxt
 	if err != nil {
@@ -540,18 +536,11 @@ func getVersionSet(client discovery.ServerGroupsInterface) (versionSet, error) {
 
 func (s *ReleaseServer) renderResources(ch *chart.Chart, values chartutil.Values) ([]*release.Hook, *bytes.Buffer, string, error) {
 
-	fmt.Println("_________________________________10\n\n")
 	renderer := s.engine(ch)
-	fmt.Println("\n_________________________________11\n\n")
-
-
-	fmt.Println("_________________________________5.5\n\n")
 	files, err := renderer.Render(ch, values)
 	if err != nil {
 		return nil, nil, "", err
 	}
-
-	fmt.Println("_____________________________6\n\n")
 
 	// NOTES.txt gets rendered like all the other files, but because it's not a hook nor a resource,
 	// pull it out of here into a separate file so that we can actually use the output of the rendered
@@ -618,6 +607,8 @@ func (s *ReleaseServer) recordRelease(r *release.Release, reuse bool) {
 // performRelease runs a release.
 func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 	//res := &services.InstallReleaseResponse{Release: r}
+	rel.Status = tc_api.ReleaseStatus{}
+	rel.Status.Status = new(release.Status)
 
 	//TODO check DryRun later
 	/*	if req.DryRun {
@@ -663,12 +654,7 @@ func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 	default:
 		// nothing to replace, create as normal
 		// regular manifests
-		fmt.Println("_________________________________________________101.....\n\n")
 		b := bytes.NewBufferString(rel.Spec.Manifest)
-		fmt.Println("_____________________________________102\n\n",rel.Spec.Manifest)
-		fmt.Println("_______________________________103")
-
-		fmt.Println(rel.Namespace)
 		//os.Exit(1)
 		if err := s.env.KubeClient.Create(rel.Namespace, b); err != nil {
 			log.Printf("warning: Release %q failed: %s", rel.Name, err)
@@ -677,9 +663,6 @@ func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 			return fmt.Errorf("release %s failed: %s", rel.Name, err)
 		}
 	}
-
-
-	fmt.Println("_________________________________________________104\n\n")
 
 	// post-install hooks
 	if !rel.Spec.DisableHooks {
@@ -699,8 +682,6 @@ func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 	// One possible strategy would be to do a timed retry to see if we can get
 	// this stored in the future.
 	//r.Info.Status.Code = release.Status_DEPLOYED
-	rel.Status = tc_api.ReleaseStatus{}
-	rel.Status.Status = new(release.Status)
 	rel.Status.Status.Code = release.Status_DEPLOYED
 	// s.recordRelease(r, false) TODO replace r with hapi.release
 
@@ -726,10 +707,6 @@ func (s *ReleaseServer) execHook(hs []*release.Hook, name, namespace, hook strin
 		if !found {
 			continue
 		}
-
-
-		fmt.Println("\n\n__________________________110\n\n")
-
 		b := bytes.NewBufferString(h.Manifest)
 		if err := kubeCli.Create(namespace, b); err != nil {
 			log.Printf("warning: Release %q pre-install %s failed: %s", name, h.Path, err)
