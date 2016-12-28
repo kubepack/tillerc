@@ -26,6 +26,6 @@ spec:
           mypod:
             Namespace: default
             mypod:
-              imagePullPolicy: Always
+              imagePullPolicy: IfNotPresent
               image: nginx
               imageTag: latest
