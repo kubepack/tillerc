@@ -39,6 +39,7 @@ import (
 	"strings"
 
 	tc_api "github.com/appscode/tillerc/api"
+	"github.com/appscode/tillerc/pkg/tiller/environment"
 	ctx "golang.org/x/net/context"
 	"k8s.io/helm/pkg/chartutil"
 	"k8s.io/helm/pkg/kube"
@@ -46,7 +47,6 @@ import (
 	"k8s.io/helm/pkg/proto/hapi/release"
 	"k8s.io/helm/pkg/proto/hapi/services"
 	relutil "k8s.io/helm/pkg/releaseutil"
-	"k8s.io/helm/pkg/tiller/environment"
 	"k8s.io/helm/pkg/timeconv"
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
@@ -594,7 +594,7 @@ func (s *ReleaseServer) renderResources(ch *chart.Chart, values chartutil.Values
 	return hooks, b, notes, nil
 }
 
-func (s *ReleaseServer) recordRelease(r *release.Release, reuse bool) {
+func (s *ReleaseServer) recordRelease(r *hapi.Release, reuse bool) {
 	if reuse {
 		if err := s.env.Releases.Update(r); err != nil {
 			log.Printf("warning: Failed to update release %q: %s", r.Name, err)
@@ -659,7 +659,8 @@ func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 		if err := s.env.KubeClient.Create(rel.Namespace, b); err != nil {
 			log.Printf("warning: Release %q failed: %s", rel.Name, err)
 			rel.Status.Status.Code = release.Status_FAILED
-			// s.recordRelease(r, false) TODO change r into hapi release
+			// record release in a release version ...
+			s.recordRelease(rel, false)
 			return fmt.Errorf("release %s failed: %s", rel.Name, err)
 		}
 	}

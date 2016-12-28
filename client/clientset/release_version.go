@@ -40,12 +40,12 @@ func newReleaseVersions(c *ExtensionsClient, namespace string) *releaseVersions 
 }
 
 // Create takes the representation of a release and creates it.  Returns the server's representation of the release, and an error, if there is any.
-func (c *releaseVersions) Create(release *aci.ReleaseVersion) (result *aci.ReleaseVersion, err error) {
+func (c *releaseVersions) Create(version *aci.ReleaseVersion) (result *aci.ReleaseVersion, err error) {
 	result = &aci.ReleaseVersion{}
 	err = c.client.Post().
 		Namespace(c.ns).
 		Resource("release-versions").
-		Body(release).
+		Body(version).
 		Do().
 		Into(result)
 	return
