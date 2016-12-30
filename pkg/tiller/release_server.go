@@ -40,11 +40,13 @@ import (
 
 	tc_api "github.com/appscode/tillerc/api"
 	"github.com/appscode/tillerc/client/clientset"
+	relutil "github.com/appscode/tillerc/pkg/releaseutil"
 	"github.com/appscode/tillerc/pkg/storage"
 	"github.com/appscode/tillerc/pkg/storage/driver"
 	"github.com/appscode/tillerc/pkg/tiller/environment"
 	ctx "golang.org/x/net/context"
 	"k8s.io/helm/pkg/chartutil"
+	"k8s.io/helm/pkg/kube"
 	"k8s.io/helm/pkg/proto/hapi/chart"
 	"k8s.io/helm/pkg/proto/hapi/release"
 	"k8s.io/helm/pkg/proto/hapi/services"
@@ -98,7 +100,7 @@ type ReleaseServer struct {
 	Client *hcs.ExtensionsClient
 	// sync time to sync the list.
 	SyncPeriod time.Duration
-	Config      *rest.Config
+	Config     *rest.Config
 }
 
 func New(env *environment.Environment, c *rest.Config) *ReleaseServer {
@@ -107,7 +109,7 @@ func New(env *environment.Environment, c *rest.Config) *ReleaseServer {
 		clientset:  internalclientset.NewForConfigOrDie(c),
 		Client:     hcs.NewExtensionsForConfigOrDie(c),
 		SyncPeriod: time.Minute * 2,
-		Config:      c,
+		Config:     c,
 	}
 }
 
@@ -140,7 +142,10 @@ func (s *ReleaseServer) RunAndHold() {
 			},
 			DeleteFunc: func(obj interface{}) {
 				glog.Infoln("got one deleted event", obj.(*hapi.Release))
-				s.(obj.(*hapi.Release))
+				err := s.UninstallRelease(obj.(*hapi.Release))
+				if err != nil {
+					log.Print(err)
+				}
 			},
 			UpdateFunc: func(old, new interface{}) {
 				if !reflect.DeepEqual(old, new) {
@@ -749,15 +754,15 @@ func (s *ReleaseServer) purgeReleases(rels ...*release.Release) error {
 }
 
 // UninstallRelease deletes all of the resources associated with this release, and marks the release DELETED.
-func (s *ReleaseServer) UninstallRelease(c ctx.Context, req *services.UninstallReleaseRequest) (*services.UninstallReleaseResponse, error) {
-	/*if !ValidName.MatchString(req.Name) {
-		log.Printf("uninstall: Release not found: %s", req.Name)
+func (s *ReleaseServer) UninstallRelease(rel hapi.ReleaseVersion) error {
+	if !ValidName.MatchString(rel.Name) {
+		log.Printf("uninstall: Release not found: %s", rel.Name)
 		return nil, errMissingRelease
 	}
 
-	rels, err := s.env.Releases.History(req.Name)
+	rels, err := s.env.Releases.History(rel.Name)
 	if err != nil {
-		log.Printf("uninstall: Release not loaded: %s", req.Name)
+		log.Printf("uninstall: Release not loaded: %s", rel.Name)
 		return nil, err
 	}
 	if len(rels) < 1 {
@@ -770,23 +775,23 @@ func (s *ReleaseServer) UninstallRelease(c ctx.Context, req *services.UninstallR
 	// TODO: Are there any cases where we want to force a delete even if it's
 	// already marked deleted?
 	if rel.Info.Status.Code == release.Status_DELETED {
-		if req.Purge {
-			if err := s.purgeReleases(rels...); err != nil {
-				log.Printf("uninstall: Failed to purge the release: %s", err)
-				return nil, err
-			}
-			return &services.UninstallReleaseResponse{Release: rel}, nil
-		}
-		return nil, fmt.Errorf("the release named %q is already deleted", req.Name)
+		/*		if req.Purge { ToDO add purge
+				if err := s.purgeReleases(rels...); err != nil {
+					log.Printf("uninstall: Failed to purge the release: %s", err)
+					return nil, err
+				}
+				return &services.UninstallReleaseResponse{Release: rel}, nil
+			}*/
+		return nil, fmt.Errorf("the release named %q is already deleted", rel.Name)
 	}
 
-	log.Printf("uninstall: Deleting %s", req.Name)
+	log.Printf("uninstall: Deleting %s", rel.Name)
 	rel.Info.Status.Code = release.Status_DELETING
 	rel.Info.Deleted = timeconv.Now()
 	res := &services.UninstallReleaseResponse{Release: rel}
 
-	if !req.DisableHooks {
-		if err := s.execHook(rel.Hooks, rel.Name, rel.Namespace, preDelete, req.Timeout); err != nil {
+	if !rel.DisableHooks {
+		if err := s.execHook(rel.Hooks, rel.Name, rel.Namespace, preDelete, rel.Spec.Timeout); err != nil {
 			return res, err
 		}
 	}
@@ -822,7 +827,7 @@ func (s *ReleaseServer) UninstallRelease(c ctx.Context, req *services.UninstallR
 	for _, file := range filesToDelete {
 		b := bytes.NewBufferString(file.content)
 		if err := s.env.KubeClient.Delete(rel.Namespace, b); err != nil {
-			log.Printf("uninstall: Failed deletion of %q: %s", req.Name, err)
+			log.Printf("uninstall: Failed deletion of %q: %s", rel.Name, err)
 			if err == kube.ErrNoObjectsVisited {
 				// Rewrite the message from "no objects visited"
 				err = errors.New("object not found, skipping delete")
@@ -852,7 +857,7 @@ func (s *ReleaseServer) UninstallRelease(c ctx.Context, req *services.UninstallR
 	if len(es) > 0 {
 		errs = fmt.Errorf("deletion completed with %d error(s): %s", len(es), strings.Join(es, "; "))
 	}
-	*/
+
 	res := &services.UninstallReleaseResponse{}
 	return res, nil // errs
 }

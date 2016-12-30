@@ -131,7 +131,7 @@ func (s *Storage) Deployed(name string) (*rspb.Release, error) {
 
 // History returns the revision history for the release with the provided name, or
 // returns ErrReleaseNotFound if no such release name exists.
-func (s *Storage) History(name string) ([]*rspb.Release, error) {
+func (s *Storage) History(name string) ([]*hapi.Release, error) {
 	log.Printf("Getting release history for '%s'\n", name)
 
 	l, err := s.Driver.Query(map[string]string{"NAME": name, "OWNER": "TILLER"})

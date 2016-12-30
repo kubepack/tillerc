@@ -67,7 +67,7 @@ type Deletor interface {
 type Queryor interface {
 	Get(key string) (*hapi.Release, error)
 	List(filter func(*rspb.Release) bool) ([]*rspb.Release, error)
-	Query(labels map[string]string) ([]*rspb.Release, error)
+	Query(labels map[string]string) ([]*hapi.Release, error)
 }
 
 // Driver is the interface composed of Creator, Updator, Deletor, Queryor

@@ -120,7 +120,7 @@ func (versions *ReleaseVersions) List(filter func(*rspb.Release) bool) ([]*rspb.
 
 // Query fetches all releases that match the provided map of labels.
 // An error is returned if the configmap fails to retrieve the releases.
-func (versions *ReleaseVersions) Query(labels map[string]string) ([]*rspb.Release, error) {
+func (versions *ReleaseVersions) Query(labels map[string]string) ([]*hapi.Release, error) {
 	ls := kblabels.Set{}
 	for k, v := range labels {
 		ls[k] = v
@@ -138,10 +138,10 @@ func (versions *ReleaseVersions) Query(labels map[string]string) ([]*rspb.Releas
 		return nil, ErrReleaseNotFound
 	}
 
-	var results []*rspb.Release
+	var results []*hapi.Release
 	for _, item := range list.Items {
 		fmt.Println(item)
-		rls, err := decodeRelease("") //(item.Data["release"])
+		// rls, err := decodeRelease("") //(item.Data["release"])  // Make release From release version
 		if err != nil {
 			logerrf(err, "query: failed to decode release: %s", err)
 			continue
