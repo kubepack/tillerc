@@ -17,47 +17,49 @@ limitations under the License.
 package driver
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/base64"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"strconv"
 	"time"
 
 	"github.com/appscode/tillerc/client/clientset"
+	"github.com/golang/protobuf/proto"
 	"k8s.io/kubernetes/pkg/api"
 	kberrs "k8s.io/kubernetes/pkg/api/errors"
 
 	hapi "github.com/appscode/tillerc/api"
 	rspb "k8s.io/helm/pkg/proto/hapi/release"
-	//rspb "k8s.io/helm/pkg/proto/hapi/release"
-	//"k8s.io/helm/pkg/storage/driver"
-	//"github.com/appscode/tillerc/pkg/storage/driver"
+	kblabels "k8s.io/kubernetes/pkg/labels"
 )
 
 var _ Driver = (*ReleaseVersions)(nil)
 
-// ConfigMapsDriverName is the string name of the driver.
-const ConfigMapsDriverName = "ConfigMap"
+// ReleaseVersionDriverName is the string name of the driver.
+const ReleaseVersion = "ReleaseVersion"
 
 var b64 = base64.StdEncoding
 
 var magicGzip = []byte{0x1f, 0x8b, 0x08}
 
-// ConfigMaps is a wrapper around an implementation of a kubernetes
-// ConfigMapsInterface.
+// ReleaseVersion is a wrapper around an implementation of a kubernetes
+// ReleaseVersions Interface.
 type ReleaseVersions struct {
 	impl client.ReleaseVersionInterface
 }
 
-// NewConfigMaps initializes a new ConfigMaps wrapping an implmenetation of
-// the kubernetes ConfigMapsInterface.
-func NewRevisionVersion(impl client.ReleaseVersionInterface) *ReleaseVersions {
+// NewRevisionVersion initializes a new ConfigMaps wrapping an implmenetation of
+// the kubernetes ThirdPartResource.
+func NewReleaseVersion(impl client.ReleaseVersionInterface) *ReleaseVersions {
 	return &ReleaseVersions{impl: impl}
 }
 
 // Name returns the name of the driver.
 func (version *ReleaseVersions) Name() string {
-	return ConfigMapsDriverName
+	return ReleaseVersion
 }
 
 // Get fetches the release named by key. The corresponding release is returned
@@ -87,8 +89,8 @@ func (versions *ReleaseVersions) Get(key string) (*hapi.Release, error) {
 // List fetches all releases and returns the list releases such
 // that filter(release) == true. An error is returned if the
 // configmap fails to retrieve the releases.
-func (versions *ReleaseVersions) List(filter func(*hapi.Release) bool) ([]*hapi.Release, error) {
-	/*lsel := kblabels.Set{"OWNER": "TILLER"}.AsSelector()
+func (versions *ReleaseVersions) List(filter func(*rspb.Release) bool) ([]*rspb.Release, error) {
+	lsel := kblabels.Set{"OWNER": "TILLER"}.AsSelector()
 	opts := api.ListOptions{LabelSelector: lsel}
 
 	list, err := versions.impl.List(opts)
@@ -97,12 +99,13 @@ func (versions *ReleaseVersions) List(filter func(*hapi.Release) bool) ([]*hapi.
 		return nil, err
 	}
 
-	var results []*hapi.Release
+	var results []*rspb.Release
 
 	// iterate over the configmaps object list
 	// and decode each release
 	for _, item := range list.Items {
-		// rls, err := decodeRelease(item.Data["release"])
+		fmt.Println(item)
+		rls, err := decodeRelease("") //(item.Data["release"])
 		if err != nil {
 			logerrf(err, "list: failed to decode release: %v", item)
 			continue
@@ -110,22 +113,22 @@ func (versions *ReleaseVersions) List(filter func(*hapi.Release) bool) ([]*hapi.
 		if filter(rls) {
 			results = append(results, rls)
 		}
-	}*/
-	var results []*hapi.Release
+	}
+
 	return results, nil
 }
 
 // Query fetches all releases that match the provided map of labels.
 // An error is returned if the configmap fails to retrieve the releases.
-func (versions *ReleaseVersions) Query(labels map[string]string) ([]*hapi.Release, error) {
-	/*ls := kblabels.Set{}
+func (versions *ReleaseVersions) Query(labels map[string]string) ([]*rspb.Release, error) {
+	ls := kblabels.Set{}
 	for k, v := range labels {
 		ls[k] = v
 	}
 
 	opts := api.ListOptions{LabelSelector: ls.AsSelector()}
 
-	list, err := cfgmaps.impl.List(opts)
+	list, err := versions.impl.List(opts)
 	if err != nil {
 		logerrf(err, "query: failed to query with labels")
 		return nil, err
@@ -137,38 +140,38 @@ func (versions *ReleaseVersions) Query(labels map[string]string) ([]*hapi.Releas
 
 	var results []*rspb.Release
 	for _, item := range list.Items {
-		rls, err := decodeRelease(item.Data["release"])
+		fmt.Println(item)
+		rls, err := decodeRelease("") //(item.Data["release"])
 		if err != nil {
 			logerrf(err, "query: failed to decode release: %s", err)
 			continue
 		}
 		results = append(results, rls)
-	}*/
-	var results []*hapi.Release
+	}
+
 	return results, nil
 }
 
-// Create creates a new ConfigMap holding the release. If the
-// ConfigMap already exists, ErrReleaseExists is returned.
+// Create creates a new ReleaseVersion holding the release. If the
+// ReleaseVersion already exists, ErrReleaseExists is returned.
 func (version *ReleaseVersions) Create(key string, rls *hapi.Release) error {
-	// set labels for configmaps object meta data
+	// set labels for release version object meta data
 	var lbs labels
 
 	lbs.init()
 	lbs.set("CREATED_AT", strconv.Itoa(int(time.Now().Unix())))
 
-	// create a new configmap to hold the release
+	// create a new releaseversion to hold the release
 	obj, err := newReleaseVersionObject(key, rls, lbs)
 	if err != nil {
 		logerrf(err, "create: failed to encode release %q", rls.Name)
 		return err
 	}
-	// push the configmap object out into the kubiverse
+	// push the release version object out into the kubiverse
 	if _, err := version.impl.Create(obj); err != nil {
 		if kberrs.IsAlreadyExists(err) {
 			return ErrReleaseExists
 		}
-
 		logerrf(err, "create: failed to create")
 		return err
 	}
@@ -248,7 +251,6 @@ func newReleaseVersionObject(key string, rls *hapi.Release, lbs labels) (*hapi.R
 	lbs.set("OWNER", owner)
 	lbs.set("STATUS", rspb.Status_Code_name[int32(rls.Status.Status.Code)])
 	lbs.set("VERSION", strconv.Itoa(int(rls.Spec.Version)))
-
 	//create and return release version object
 
 	releaseVersion := &hapi.ReleaseVersion{
@@ -268,6 +270,58 @@ func newReleaseVersionObject(key string, rls *hapi.Release, lbs labels) (*hapi.R
 		},
 		Data: map[string]string{"release": s},
 	}, nil*/
+}
+
+func encodeRelease(rls *rspb.Release) (string, error) {
+	b, err := proto.Marshal(rls)
+	if err != nil {
+		return "", err
+	}
+	var buf bytes.Buffer
+	w, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	if err != nil {
+		return "", err
+	}
+	if _, err = w.Write(b); err != nil {
+		return "", err
+	}
+	w.Close()
+
+	return b64.EncodeToString(buf.Bytes()), nil
+}
+
+// decodeRelease decodes the bytes in data into a release
+// type. Data must contain a base64 encoded string of a
+// valid protobuf encoding of a release, otherwise
+// an error is returned.
+func decodeRelease(data string) (*rspb.Release, error) {
+	// base64 decode string
+	b, err := b64.DecodeString(data)
+	if err != nil {
+		return nil, err
+	}
+
+	// For backwards compatibility with releases that were stored before
+	// compression was introduced we skip decompression if the
+	// gzip magic header is not found
+	if bytes.Equal(b[0:3], magicGzip) {
+		r, err := gzip.NewReader(bytes.NewReader(b))
+		if err != nil {
+			return nil, err
+		}
+		b2, err := ioutil.ReadAll(r)
+		if err != nil {
+			return nil, err
+		}
+		b = b2
+	}
+
+	var rls rspb.Release
+	// unmarshal protobuf bytes
+	if err := proto.Unmarshal(b, &rls); err != nil {
+		return nil, err
+	}
+	return &rls, nil
 }
 
 // logerrf wraps an error with the a formatted string (used for debugging)

@@ -30,8 +30,6 @@ import (
 	"k8s.io/helm/pkg/engine"
 	"k8s.io/helm/pkg/kube"
 	"k8s.io/helm/pkg/proto/hapi/chart"
-	//"k8s.io/helm/pkg/storage/driver"
-	//"k8s.io/helm/pkg/storage/driver"
 	"k8s.io/kubernetes/pkg/kubectl/resource"
 )
 
@@ -201,10 +199,9 @@ func New() *Environment {
 		// we can easily add some here.
 		GoTplEngine: e,
 	}
-
 	return &Environment{
 		EngineYard: ey,
-		//Releases:   storage.Init(driver.NewMemory()),
+		//Releases:   storage.Init(driver.NewRevisionVersion(clientset.ReleaseVersion(""))), //(driver.NewMemory()),
 		KubeClient: kube.New(nil),
 	}
 }

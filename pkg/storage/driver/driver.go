@@ -20,6 +20,7 @@ import (
 	"errors"
 
 	hapi "github.com/appscode/tillerc/api"
+	rspb "k8s.io/helm/pkg/proto/hapi/release"
 )
 
 var (
@@ -65,8 +66,8 @@ type Deletor interface {
 // Query returns the set of all releases that match the provided label set.
 type Queryor interface {
 	Get(key string) (*hapi.Release, error)
-	List(filter func(*hapi.Release) bool) ([]*hapi.Release, error)
-	Query(labels map[string]string) ([]*hapi.Release, error)
+	List(filter func(*rspb.Release) bool) ([]*rspb.Release, error)
+	Query(labels map[string]string) ([]*rspb.Release, error)
 }
 
 // Driver is the interface composed of Creator, Updator, Deletor, Queryor
