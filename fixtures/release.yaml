@@ -1,9 +1,32 @@
 apiVersion: helm.sh/v1beta1
 kind: Release
 metadata:
-  name: busybox
+  name: testbusybox1
   labels:
-    app: busybox
+    app: testbusybox1
 spec:
-  manifest: 'abcdefg'
+  purge: false
+  manifest: 'abcdefgww'
   disableHooks: false
+  chart:
+    inline:
+      templates:
+      - name: "mypod.yaml"
+        data: 'YXBpVmVyc2lvbjogdjENCmtpbmQ6IFBvZA0KbWV0YWRhdGE6DQogIGxhYmVsczoNCiAgICBjaGFydDogJ3t7LkNoYXJ0Lk5hbWV9fV97ey5DaGFydC5WZXJzaW9ufX0nDQogICAgaGVyaXRhZ2U6ICd7ey5SZWxlYXNlLlNlcnZpY2V9fScNCiAgICByZWxlYXNlOiAne3suUmVsZWFzZS5OYW1lfX0nDQogIG5hbWU6ICd7eyB0ZW1wbGF0ZSAiZnVsbG5hbWUiIC4gfX0tbXlwb2QnDQogIG5hbWVzcGFjZTogJ3t7LlZhbHVlcy5teXBvZC5OYW1lc3BhY2V9fScNCnNwZWM6DQogIGNvbnRhaW5lcnM6DQogIC0gaW1hZ2U6ICd7ey5WYWx1ZXMubXlwb2QubXlwb2QuaW1hZ2V9fTp7ey5WYWx1ZXMubXlwb2QubXlwb2QuaW1hZ2VUYWd9fScNCiAgICBpbWFnZVB1bGxQb2xpY3k6ICd7ey5WYWx1ZXMubXlwb2QubXlwb2QuaW1hZ2VQdWxsUG9saWN5fX0nDQogICAgbmFtZTogbXlwb2Q='
+      - name: "_helpers.tpl"
+        data: 'e3svKiB2aW06IHNldCBmaWxldHlwZT1tdXN0YWNoZTogKi99fQ0Ke3svKg0KRXhwYW5kIHRoZSBuYW1lIG9mIHRoZSBjaGFydC4NCiovfX0NCnt7LSBkZWZpbmUgIm5hbWUiIC19fQ0Ke3stIGRlZmF1bHQgLkNoYXJ0Lk5hbWUgLlZhbHVlcy5uYW1lT3ZlcnJpZGUgfCB0cnVuYyAyNCAtfX0NCnt7LSBlbmQgLX19DQoNCnt7LyoNCkNyZWF0ZSBhIGRlZmF1bHQgZnVsbHkgcXVhbGlmaWVkIGFwcCBuYW1lLg0KV2UgdHJ1bmNhdGUgYXQgMjQgY2hhcnMgYmVjYXVzZSBzb21lIEt1YmVybmV0ZXMgbmFtZSBmaWVsZHMgYXJlIGxpbWl0ZWQgdG8gdGhpcyAoYnkgdGhlIEROUyBuYW1pbiQNCiovfX0NCnt7LSBkZWZpbmUgImZ1bGxuYW1lIiAtfX0NCnt7LSAkbmFtZSA6PSBkZWZhdWx0IC5DaGFydC5OYW1lIC5WYWx1ZXMubmFtZU92ZXJyaWRlIC19fQ0Ke3stIHByaW50ZiAiJXMtJXMiIC5SZWxlYXNlLk5hbWUgJG5hbWUgfCB0cnVuYyAyNCAtfX0NCnt7LSBlbmQgLX19'
+      metadata:
+        name: chart
+        apiVersion: v1
+        description: helm testchart
+        version: 1.0.1
+        engine: ""
+        icon: ""
+      values:
+        raw : |
+          mypod:
+            Namespace: default
+            mypod:
+              imagePullPolicy: Always
+              image: nginx
+              imageTag: latest

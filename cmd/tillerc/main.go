@@ -6,9 +6,9 @@ import (
 
 	_ "github.com/appscode/tillerc/api/install"
 	"github.com/appscode/tillerc/pkg/tiller"
+	"github.com/appscode/tillerc/pkg/tiller/environment"
 	"github.com/golang/glog"
 	"github.com/spf13/pflag"
-	"k8s.io/helm/pkg/tiller/environment"
 	"k8s.io/kubernetes/pkg/client/unversioned/clientcmd"
 	"k8s.io/kubernetes/pkg/util/flag"
 	"k8s.io/kubernetes/pkg/util/logs"
