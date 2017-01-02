@@ -61,6 +61,8 @@ type ReleaseSpec struct {
 
 	// timeout specifies the max amount of time any kubernetes client command can run.
 	Timeout int64 `protobuf:"varint,7,opt,name=timeout" json:"timeout,omitempty"`
+
+	Purge bool `protobuf:"varint,3,opt,name=purge" json:"purge,omitempty"`
 }
 
 type ReleaseStatus struct {

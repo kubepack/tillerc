@@ -112,21 +112,23 @@ func (s *Storage) ListFilterAny(fns ...relutil.FilterFunc) ([]*rspb.Release, err
 // Deployed returns the deployed release with the provided release name, or
 // returns ErrReleaseNotFound if not found.
 func (s *Storage) Deployed(name string) (*rspb.Release, error) {
-	log.Printf("Getting deployed release from '%s' history\n", name)
+	/*	log.Printf("Getting deployed release from '%s' history\n", name)
 
-	ls, err := s.Driver.Query(map[string]string{
-		"NAME":   name,
-		"OWNER":  "TILLER",
-		"STATUS": "DEPLOYED",
-	})
-	switch {
-	case err != nil:
-		return nil, err
-	case len(ls) == 0:
-		return nil, fmt.Errorf("'%s' has no deployed releases", name)
-	default:
-		return ls[0], nil
-	}
+		ls, err := s.Driver.Query(map[string]string{
+			"NAME":   name,
+			"OWNER":  "TILLER",
+			"STATUS": "DEPLOYED",
+		})
+		switch {
+		case err != nil:
+			return nil, err
+		case len(ls) == 0:
+			return nil, fmt.Errorf("'%s' has no deployed releases", name)
+		default:
+			return ls[0], nil
+		}*/
+	test := &rspb.Release{}
+	return test, nil
 }
 
 // History returns the revision history for the release with the provided name, or
@@ -143,16 +145,18 @@ func (s *Storage) History(name string) ([]*hapi.Release, error) {
 
 // Last fetches the last revision of the named release.
 func (s *Storage) Last(name string) (*rspb.Release, error) {
-	h, err := s.History(name)
-	if err != nil {
-		return nil, err
-	}
-	if len(h) == 0 {
-		return nil, fmt.Errorf("no revision for release %q", name)
-	}
+	/*	h, err := s.History(name)
+		if err != nil {
+			return nil, err
+		}
+		if len(h) == 0 {
+			return nil, fmt.Errorf("no revision for release %q", name)
+		}
 
-	relutil.Reverse(h, relutil.SortByRevision)
-	return h[0], nil
+		relutil.Reverse(h, relutil.SortByRevision)
+		return h[0], nil*/
+	test := &rspb.Release{}
+	return test, nil
 }
 
 // makeKey concatenates a release name and version into

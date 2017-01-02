@@ -31,6 +31,8 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 	kberrs "k8s.io/kubernetes/pkg/api/errors"
 
+	"strings"
+
 	hapi "github.com/appscode/tillerc/api"
 	rspb "k8s.io/helm/pkg/proto/hapi/release"
 	kblabels "k8s.io/kubernetes/pkg/labels"
@@ -140,15 +142,13 @@ func (versions *ReleaseVersions) Query(labels map[string]string) ([]*hapi.Releas
 
 	var results []*hapi.Release
 	for _, item := range list.Items {
-		fmt.Println(item)
-		// rls, err := decodeRelease("") //(item.Data["release"])  // Make release From release version
+		rls, err := getReleaseFromReleaseVersion(&item) // Make release From release version equivalent to previous decode process
 		if err != nil {
 			logerrf(err, "query: failed to decode release: %s", err)
 			continue
 		}
 		results = append(results, rls)
 	}
-
 	return results, nil
 }
 
@@ -178,27 +178,27 @@ func (version *ReleaseVersions) Create(key string, rls *hapi.Release) error {
 	return nil
 }
 
-// Update updates the ConfigMap holding the release. If not found
+// Update updates the releaseversion holding the release. If not found
 // the ConfigMap is created to hold the release.
 func (versions *ReleaseVersions) Update(key string, rls *hapi.Release) error {
-	/*	// set labels for configmaps object meta data
-		var lbs labels
+	// set labels for releaserevision object meta data
+	var lbs labels
 
-		lbs.init()
-		lbs.set("MODIFIED_AT", strconv.Itoa(int(time.Now().Unix())))
+	lbs.init()
+	lbs.set("MODIFIED_AT", strconv.Itoa(int(time.Now().Unix())))
 
-		// create a new configmap object to hold the release
-		obj, err := newReleaseVersionObject(key, rls, lbs)
-		if err != nil {
-			logerrf(err, "update: failed to encode release %q", rls.Name)
-			return err
-		}
-		// push the configmap object out into the kubiverse
-		// TODO Check _, err = versions.impl.Update(obj)
-		if err != nil {
-			logerrf(err, "update: failed to update")
-			return err
-		}*/
+	// create a new re object to hold the release
+	obj, err := newReleaseVersionObject(key, rls, lbs)
+	if err != nil {
+		logerrf(err, "update: failed to encode release %q", rls.Name)
+		return err
+	}
+	// push the configmap object out into the kubiverse
+	_, err = versions.impl.Update(obj)
+	if err != nil {
+		logerrf(err, "update: failed to update")
+		return err
+	}
 	return nil
 }
 
@@ -235,13 +235,6 @@ func (versions *ReleaseVersions) Delete(key string) (rls *hapi.Release, err erro
 //
 func newReleaseVersionObject(key string, rls *hapi.Release, lbs labels) (*hapi.ReleaseVersion, error) {
 	const owner = "TILLER"
-
-	// encode the release
-	/*	s, err := encodeRelease(rls)
-		if err != nil {
-			return nil, err
-		}*/
-
 	if lbs == nil {
 		lbs.init()
 	}
@@ -261,15 +254,6 @@ func newReleaseVersionObject(key string, rls *hapi.Release, lbs labels) (*hapi.R
 	}
 	releaseVersion.Spec.ReleaseSpec = rls.Spec
 	return releaseVersion, nil
-
-	// create and return configmap object
-	/*	return &api.ConfigMap{
-		ObjectMeta: api.ObjectMeta{
-			Name:   key,
-			Labels: lbs.toMap(),
-		},
-		Data: map[string]string{"release": s},
-	}, nil*/
 }
 
 func encodeRelease(rls *rspb.Release) (string, error) {
@@ -327,4 +311,19 @@ func decodeRelease(data string) (*rspb.Release, error) {
 // logerrf wraps an error with the a formatted string (used for debugging)
 func logerrf(err error, format string, args ...interface{}) {
 	log.Printf("configmaps: %s: %s\n", fmt.Sprintf(format, args...), err)
+}
+
+func getReleaseFromReleaseVersion(rv *hapi.ReleaseVersion) (*hapi.Release, error) {
+	rs := &hapi.Release{}
+	rs.Spec = rv.Spec.ReleaseSpec
+	rs.ObjectMeta = rv.ObjectMeta
+	rs.Status.Status = rv.Status.Status
+
+	rs.Name = GetReleaseNameFromReleaseVersion(rv.Name)
+	return rs, nil
+}
+
+func GetReleaseNameFromReleaseVersion(name string) string {
+	releaseName := strings.Split(name, "-")
+	return releaseName[0]
 }

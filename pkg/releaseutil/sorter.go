@@ -19,11 +19,12 @@ package releaseutil // import "github.com/appscode/tillerc/pkg/releaseutil"
 import (
 	"sort"
 
+	hapi "github.com/appscode/tillerc/api"
 	rspb "k8s.io/helm/pkg/proto/hapi/release"
 )
 
 type sorter struct {
-	list []*rspb.Release
+	list []*hapi.Release
 	less func(int, int) bool
 }
 
@@ -41,7 +42,7 @@ func Reverse(list []*rspb.Release, sortFn func([]*rspb.Release)) {
 
 // SortByName returns the list of releases sorted
 // in lexicographical order.
-func SortByName(list []*rspb.Release) {
+/*func SortByName(list []*rspb.Release) {
 	s := &sorter{list: list}
 	s.less = func(i, j int) bool {
 		ni := s.list[i].Name
@@ -49,10 +50,11 @@ func SortByName(list []*rspb.Release) {
 		return ni < nj
 	}
 	sort.Sort(s)
-}
+}*/
 
 // SortByDate returns the list of releases sorted by a
 // release's last deployed time (in seconds).
+/*
 func SortByDate(list []*rspb.Release) {
 	s := &sorter{list: list}
 
@@ -71,6 +73,17 @@ func SortByRevision(list []*rspb.Release) {
 	s.less = func(i, j int) bool {
 		vi := s.list[i].Version
 		vj := s.list[j].Version
+		return vi < vj
+	}
+	sort.Sort(s)
+}
+*/
+
+func SortByRevisionVersion(list []*hapi.Release) {
+	s := &sorter{list: list}
+	s.less = func(i, j int) bool {
+		vi := s.list[i].Spec.Version
+		vj := s.list[j].Spec.Version
 		return vi < vj
 	}
 	sort.Sort(s)

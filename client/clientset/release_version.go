@@ -14,6 +14,7 @@ type ReleaseVersionNamespacer interface {
 // ReleaseVersionInterface has methods to work with ReleaseVersion resources.
 type ReleaseVersionInterface interface {
 	Create(*aci.ReleaseVersion) (*aci.ReleaseVersion, error)
+	Update(*aci.ReleaseVersion) (*aci.ReleaseVersion, error)
 	Delete(name string, options *api.DeleteOptions) error
 	DeleteCollection(options *api.DeleteOptions, listOptions api.ListOptions) error
 	Get(name string) (*aci.ReleaseVersion, error)
@@ -105,4 +106,17 @@ func (c *releaseVersions) Watch(opts api.ListOptions) (watch.Interface, error) {
 		Resource("ReleaseVersions").
 		VersionedParams(&opts, api.ParameterCodec).
 		Watch()
+}
+
+//updates release-version
+
+func (c *releaseVersions) Update(version *aci.ReleaseVersion) (result *aci.ReleaseVersion, err error) {
+	result = &aci.ReleaseVersion{}
+	err = c.client.Put().
+		Namespace(c.ns).
+		Resource("ReleaseVersions").
+		Body(version).
+		Do().
+		Into(result)
+	return
 }

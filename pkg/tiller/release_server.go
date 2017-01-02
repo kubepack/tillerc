@@ -700,7 +700,6 @@ func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 	//
 	// One possible strategy would be to do a timed retry to see if we can get
 	// this stored in the future.
-	//r.Info.Status.Code = release.Status_DEPLOYED
 	rel.Status.Status.Code = release.Status_DEPLOYED
 	s.recordRelease(rel, false)
 
@@ -744,9 +743,9 @@ func (s *ReleaseServer) execHook(hs []*release.Hook, name, namespace, hook strin
 	return nil
 }
 
-func (s *ReleaseServer) purgeReleases(rels ...*release.Release) error {
+func (s *ReleaseServer) purgeReleases(rels ...*hapi.Release) error {
 	for _, rel := range rels {
-		if _, err := s.env.Releases.Delete(rel.Name, rel.Version); err != nil {
+		if _, err := s.env.Releases.Delete(rel.Name, rel.Spec.Version); err != nil {
 			return err
 		}
 	}
@@ -754,73 +753,65 @@ func (s *ReleaseServer) purgeReleases(rels ...*release.Release) error {
 }
 
 // UninstallRelease deletes all of the resources associated with this release, and marks the release DELETED.
-func (s *ReleaseServer) UninstallRelease(rel hapi.ReleaseVersion) error {
+func (s *ReleaseServer) UninstallRelease(rel *hapi.Release) error {
 	if !ValidName.MatchString(rel.Name) {
 		log.Printf("uninstall: Release not found: %s", rel.Name)
-		return nil, errMissingRelease
+		return errMissingRelease
 	}
 
 	rels, err := s.env.Releases.History(rel.Name)
 	if err != nil {
 		log.Printf("uninstall: Release not loaded: %s", rel.Name)
-		return nil, err
+		return err
 	}
 	if len(rels) < 1 {
-		return nil, errMissingRelease
+		return errMissingRelease
 	}
 
-	relutil.SortByRevision(rels)
-	rel := rels[len(rels)-1]
-
+	relutil.SortByRevisionVersion(rels)
+	rel = rels[len(rels)-1]
 	// TODO: Are there any cases where we want to force a delete even if it's
 	// already marked deleted?
-	if rel.Info.Status.Code == release.Status_DELETED {
-		/*		if req.Purge { ToDO add purge
-				if err := s.purgeReleases(rels...); err != nil {
-					log.Printf("uninstall: Failed to purge the release: %s", err)
-					return nil, err
-				}
-				return &services.UninstallReleaseResponse{Release: rel}, nil
-			}*/
-		return nil, fmt.Errorf("the release named %q is already deleted", rel.Name)
+	if rel.Spec.Purge {
+		if err := s.purgeReleases(rels...); err != nil {
+			log.Printf("uninstall: Failed to purge the release: %s", err)
+			return err
+		}
+		return nil
 	}
-
 	log.Printf("uninstall: Deleting %s", rel.Name)
-	rel.Info.Status.Code = release.Status_DELETING
-	rel.Info.Deleted = timeconv.Now()
-	res := &services.UninstallReleaseResponse{Release: rel}
-
-	if !rel.DisableHooks {
-		if err := s.execHook(rel.Hooks, rel.Name, rel.Namespace, preDelete, rel.Spec.Timeout); err != nil {
-			return res, err
+	rel.Status.Status = new(release.Status)
+	rel.Status.Status.Code = release.Status_DELETING
+	rel.Status.Deleted = unversioned.Now()
+	if !rel.Spec.DisableHooks {
+		if err := s.execHook(rel.Spec.Hooks, rel.Name, rel.Namespace, preDelete, rel.Spec.Timeout); err != nil {
+			return err
 		}
 	}
-
 	vs, err := getVersionSet(s.clientset.Discovery())
 	if err != nil {
-		return nil, fmt.Errorf("Could not get apiVersions from Kubernetes: %s", err)
+		return fmt.Errorf("Could not get apiVersions from Kubernetes: %s", err)
 	}
-
 	// From here on out, the release is currently considered to be in Status_DELETING
 	// state.
 	if err := s.env.Releases.Update(rel); err != nil {
 		log.Printf("uninstall: Failed to store updated release: %s", err)
 	}
 
-	manifests := splitManifests(rel.Manifest)
+	manifests := splitManifests(rel.Spec.Manifest)
 	_, files, err := sortManifests(manifests, vs, UninstallOrder)
 	if err != nil {
 		// We could instead just delete everything in no particular order.
 		// FIXME: One way to delete at this point would be to try a label-based
 		// deletion. The problem with this is that we could get a false positive
 		// and delete something that was not legitimately part of this release.
-		return nil, fmt.Errorf("corrupted release record. You must manually delete the resources: %s", err)
+		return fmt.Errorf("corrupted release record. You must manually delete the resources: %s", err)
 	}
 
-	filesToKeep, filesToDelete := filterManifestsToKeep(files)
-	if len(filesToKeep) > 0 {
+	/*filesToKeep*/ _, filesToDelete := filterManifestsToKeep(files)
+	/*	if len(filesToKeep) > 0 {
 		res.Info = summarizeKeptManifests(filesToKeep)
-	}
+	}*/
 
 	// Collect the errors, and return them later.
 	es := []string{}
@@ -836,19 +827,19 @@ func (s *ReleaseServer) UninstallRelease(rel hapi.ReleaseVersion) error {
 		}
 	}
 
-	if !req.DisableHooks {
-		if err := s.execHook(rel.Hooks, rel.Name, rel.Namespace, postDelete, req.Timeout); err != nil {
+	if !rel.Spec.DisableHooks {
+		if err := s.execHook(rel.Spec.Hooks, rel.Name, rel.Namespace, postDelete, rel.Spec.Timeout); err != nil {
 			es = append(es, err.Error())
 		}
 	}
 
-	if req.Purge {
+	/*	if req.Purge { TODO add purge
 		if err := s.purgeReleases(rels...); err != nil {
 			log.Printf("uninstall: Failed to purge the release: %s", err)
 		}
-	}
+	}*/
 
-	rel.Info.Status.Code = release.Status_DELETED
+	rel.Status.Status.Code = release.Status_DELETED
 	if err := s.env.Releases.Update(rel); err != nil {
 		log.Printf("uninstall: Failed to store updated release: %s", err)
 	}
@@ -858,8 +849,7 @@ func (s *ReleaseServer) UninstallRelease(rel hapi.ReleaseVersion) error {
 		errs = fmt.Errorf("deletion completed with %d error(s): %s", len(es), strings.Join(es, "; "))
 	}
 
-	res := &services.UninstallReleaseResponse{}
-	return res, nil // errs
+	return errs
 }
 
 func splitManifests(bigfile string) map[string]string {
