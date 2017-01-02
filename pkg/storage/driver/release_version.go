@@ -245,6 +245,7 @@ func newReleaseVersionObject(key string, rls *hapi.Release, lbs labels) (*hapi.R
 	lbs.set("STATUS", rspb.Status_Code_name[int32(rls.Status.Status.Code)])
 	lbs.set("VERSION", strconv.Itoa(int(rls.Spec.Version)))
 	//create and return release version object
+	//  TODO Handle first release and last release
 
 	releaseVersion := &hapi.ReleaseVersion{
 		ObjectMeta: api.ObjectMeta{

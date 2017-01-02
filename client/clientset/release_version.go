@@ -45,7 +45,7 @@ func (c *releaseVersions) Create(version *aci.ReleaseVersion) (result *aci.Relea
 	result = &aci.ReleaseVersion{}
 	err = c.client.Post().
 		Namespace(c.ns).
-		Resource("ReleaseVersions").
+		Resource("releaseVersions").
 		Body(version).
 		Do().
 		Into(result)
@@ -56,7 +56,7 @@ func (c *releaseVersions) Create(version *aci.ReleaseVersion) (result *aci.Relea
 func (c *releaseVersions) Delete(name string, options *api.DeleteOptions) error {
 	return c.client.Delete().
 		Namespace(c.ns).
-		Resource("ReleaseVersions").
+		Resource("releaseVersions").
 		Name(name).
 		Body(options).
 		Do().
@@ -67,7 +67,7 @@ func (c *releaseVersions) Delete(name string, options *api.DeleteOptions) error 
 func (c *releaseVersions) DeleteCollection(options *api.DeleteOptions, listOptions api.ListOptions) error {
 	return c.client.Delete().
 		Namespace(c.ns).
-		Resource("ReleaseVersions").
+		Resource("releaseVersions").
 		VersionedParams(&listOptions, api.ParameterCodec).
 		Body(options).
 		Do().
@@ -79,7 +79,7 @@ func (c *releaseVersions) Get(name string) (result *aci.ReleaseVersion, err erro
 	result = &aci.ReleaseVersion{}
 	err = c.client.Get().
 		Namespace(c.ns).
-		Resource("ReleaseVersions").
+		Resource("releaseVersions").
 		Name(name).
 		Do().
 		Into(result)
@@ -91,7 +91,7 @@ func (c *releaseVersions) List(opts api.ListOptions) (result *aci.ReleaseVersion
 	result = &aci.ReleaseVersionList{}
 	err = c.client.Get().
 		Namespace(c.ns).
-		Resource("ReleaseVersions").
+		Resource("releaseVersions").
 		VersionedParams(&opts, api.ParameterCodec).
 		Do().
 		Into(result)
@@ -103,7 +103,7 @@ func (c *releaseVersions) Watch(opts api.ListOptions) (watch.Interface, error) {
 	return c.client.Get().
 		Prefix("watch").
 		Namespace(c.ns).
-		Resource("ReleaseVersions").
+		Resource("releaseVersions").
 		VersionedParams(&opts, api.ParameterCodec).
 		Watch()
 }
@@ -114,7 +114,8 @@ func (c *releaseVersions) Update(version *aci.ReleaseVersion) (result *aci.Relea
 	result = &aci.ReleaseVersion{}
 	err = c.client.Put().
 		Namespace(c.ns).
-		Resource("ReleaseVersions").
+		Resource("releaseVersions").
+		Name(version.Name).
 		Body(version).
 		Do().
 		Into(result)

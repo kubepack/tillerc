@@ -5,6 +5,7 @@ metadata:
   labels:
     app: testbusybox1
 spec:
+  purge: false
   manifest: 'abcdefgww'
   disableHooks: false
   chart:
@@ -26,6 +27,6 @@ spec:
           mypod:
             Namespace: default
             mypod:
-              imagePullPolicy: IfNotPresent
+              imagePullPolicy: Always
               image: nginx
               imageTag: latest

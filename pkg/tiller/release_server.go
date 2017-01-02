@@ -134,7 +134,7 @@ func (s *ReleaseServer) RunAndHold() {
 				if err != nil {
 					log.Print(err)
 				}
-				s.env.Releases = storage.Init(driver.NewReleaseVersion(clientset.ReleaseVersion("default")))
+				s.env.Releases = storage.Init(driver.NewReleaseVersion(clientset.ReleaseVersion(obj.(*hapi.Release).Namespace)))
 				err = s.InstallRelease(obj.(*hapi.Release))
 				if err != nil {
 					log.Print(err)
@@ -505,21 +505,10 @@ func (s *ReleaseServer) prepareRelease(rel *hapi.Release) error {
 	}
 
 	// Store a release.
-	/*	rel := &release.Release{
-		Name:      req.Name,
-		Namespace: req.Namespace,
-		Chart:     req.Chart,
-		Config:    req.Values,
-		Info: &release.Info{
-			FirstDeployed: ts,
-			LastDeployed:  ts,
-			Status:        &release.Status{Code: release.Status_UNKNOWN},
-		},
-		Manifest: manifestDoc.String(),
-		Hooks:    hooks,
-		Version:  int32(revision),
-	}*/
-
+	rel.Status.FirstDeployed = unversioned.Now()
+	rel.Status.LastDeployed = unversioned.Now()
+	rel.Status.Status = new(release.Status)
+	rel.Status.Status.Code = release.Status_UNKNOWN
 	rel.Spec.Hooks = hooks
 	rel.Spec.Manifest = manifestDoc.String()
 	rel.Spec.Version = int32(revision)
@@ -807,12 +796,10 @@ func (s *ReleaseServer) UninstallRelease(rel *hapi.Release) error {
 		// and delete something that was not legitimately part of this release.
 		return fmt.Errorf("corrupted release record. You must manually delete the resources: %s", err)
 	}
-
 	/*filesToKeep*/ _, filesToDelete := filterManifestsToKeep(files)
 	/*	if len(filesToKeep) > 0 {
 		res.Info = summarizeKeptManifests(filesToKeep)
 	}*/
-
 	// Collect the errors, and return them later.
 	es := []string{}
 	for _, file := range filesToDelete {
@@ -826,29 +813,26 @@ func (s *ReleaseServer) UninstallRelease(rel *hapi.Release) error {
 			es = append(es, err.Error())
 		}
 	}
-
 	if !rel.Spec.DisableHooks {
 		if err := s.execHook(rel.Spec.Hooks, rel.Name, rel.Namespace, postDelete, rel.Spec.Timeout); err != nil {
 			es = append(es, err.Error())
 		}
 	}
 
-	/*	if req.Purge { TODO add purge
+	if rel.Spec.Purge {
 		if err := s.purgeReleases(rels...); err != nil {
 			log.Printf("uninstall: Failed to purge the release: %s", err)
 		}
-	}*/
+	}
 
 	rel.Status.Status.Code = release.Status_DELETED
 	if err := s.env.Releases.Update(rel); err != nil {
 		log.Printf("uninstall: Failed to store updated release: %s", err)
 	}
-
 	var errs error
 	if len(es) > 0 {
 		errs = fmt.Errorf("deletion completed with %d error(s): %s", len(es), strings.Join(es, "; "))
 	}
-
 	return errs
 }
 
