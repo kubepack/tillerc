@@ -29,3 +29,14 @@ kubectl run tc --image=appscode/tillerc:<tag> --replica=1
 # Deploy new image
 kubectl set image deployment/tc tc=appscode/tillerc:<tag>
 ```
+
+## What's done:
+- This implements install and delete release.
+- For api object we used the proto generated go structs. In a proper implementation, we will use just strings as ENUMs instead of protoc generated ints, etc.
+- We have taken code from Helm repo and adapted them to make sure everything compiles.
+
+## Summary:
+ - You can find the api types here: https://github.com/appscode/tillerc/blob/master/api/types.go
+ - Client interfaces are here: https://github.com/appscode/tillerc/tree/master/client/clientset
+ - Controller: https://github.com/appscode/tillerc/blob/master/pkg/tiller/release_server.go#L117
+ - Sample YAML: https://github.com/appscode/tillerc/blob/master/fixtures/release.yaml 
