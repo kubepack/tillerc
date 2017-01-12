@@ -24,7 +24,7 @@ glide slow
 kubectl create -f ./api/extensions/helm.yaml
 
 # Deploy to Kubernetes (one time setup operation)
-kubectl run tc --image=appscode/tillerc:<tag> --replica=1
+kubectl run tc --image=appscode/tillerc:<tag> --replicas=1
 
 # Deploy new image
 kubectl set image deployment/tc tc=appscode/tillerc:<tag>
