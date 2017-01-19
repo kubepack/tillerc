@@ -54,6 +54,7 @@ import (
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	"k8s.io/kubernetes/pkg/client/typed/discovery"
+	"k8s.io/kubernetes/pkg/fields"
 )
 
 // releaseNameMaxLen is the maximum length of a release name.
@@ -158,7 +159,45 @@ func (s *ReleaseServer) RunAndHold() {
 	controller.Run(wait.NeverStop)
 }
 
-func (s *ReleaseServer) doStuff(release *hapi.Release) {
+func (s *ReleaseServer) RunForRollback() {
+	sets := fields.Set{
+		api.EventTypeField:         api.EventTypeNormal,
+		api.EventReasonField:       "releaseRollback",
+		api.EventInvolvedKindField: "release",
+	}
+	fieldSelector := fields.SelectorFromSet(sets)
+	lw := &cache.ListWatch{
+		ListFunc: func(opts api.ListOptions) (runtime.Object, error) {
+			fmt.Println("rrrrrrrrrrrrrrrrrrrrrrr\n\n")
+			opts.FieldSelector = fieldSelector
+			return s.clientset.Core().Events(api.NamespaceAll).List(opts)
+		},
+		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+			fmt.Println("tttttttttttttttttttttt\n\n")
+			options.FieldSelector = fieldSelector
+			return s.clientset.Core().Events(api.NamespaceAll).Watch(options)
+		},
+	}
+	_, controller := cache.NewInformer(lw,
+		&api.Event{},
+		s.SyncPeriod,
+		cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				fmt.Println("EVENT FOUND")
+				s.doStuff()
+			},
+			DeleteFunc: func(obj interface{}) {
+				s.doStuff()
+			},
+			UpdateFunc: func(old, new interface{}) {
+				s.doStuff()
+			},
+		},
+	)
+	controller.Run(wait.NeverStop)
+}
+
+func (s *ReleaseServer) doStuff() {
 
 }
 
