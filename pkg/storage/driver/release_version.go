@@ -178,10 +178,10 @@ func (version *ReleaseVersions) Create(key string, rls *hapi.Release) error {
 	return nil
 }
 
-// Update updates the releaseversion holding the release. If not found
-// the ConfigMap is created to hold the release.
+// Update updates the release_version holding the release. If not found
+// the release_version is created to hold the release.
 func (versions *ReleaseVersions) Update(key string, rls *hapi.Release) error {
-	// set labels for releaserevision object meta data
+	// set labels for release_version object meta data
 	var lbs labels
 
 	lbs.init()
@@ -193,7 +193,7 @@ func (versions *ReleaseVersions) Update(key string, rls *hapi.Release) error {
 		logerrf(err, "update: failed to encode release %q", rls.Name)
 		return err
 	}
-	// push the configmap object out into the kubiverse
+	// push the release_version object out into the kubiverse
 	_, err = versions.impl.Update(obj)
 	if err != nil {
 		logerrf(err, "update: failed to update")
@@ -202,7 +202,7 @@ func (versions *ReleaseVersions) Update(key string, rls *hapi.Release) error {
 	return nil
 }
 
-// Delete deletes the ConfigMap holding the release named by key.
+// Delete deletes the release_version holding the release named by key.
 func (versions *ReleaseVersions) Delete(key string) (rls *hapi.Release, err error) {
 	// fetch the release to check existence
 	if rls, err = versions.Get(key); err != nil {
@@ -254,25 +254,8 @@ func newReleaseVersionObject(key string, rls *hapi.Release, lbs labels) (*hapi.R
 		},
 	}
 	releaseVersion.Spec.ReleaseSpec = rls.Spec
+	releaseVersion.Status.Status = rls.Status.Status // status of release kept in release version
 	return releaseVersion, nil
-}
-
-func encodeRelease(rls *rspb.Release) (string, error) {
-	b, err := proto.Marshal(rls)
-	if err != nil {
-		return "", err
-	}
-	var buf bytes.Buffer
-	w, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
-	if err != nil {
-		return "", err
-	}
-	if _, err = w.Write(b); err != nil {
-		return "", err
-	}
-	w.Close()
-
-	return b64.EncodeToString(buf.Bytes()), nil
 }
 
 // decodeRelease decodes the bytes in data into a release

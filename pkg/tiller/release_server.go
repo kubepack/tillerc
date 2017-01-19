@@ -150,7 +150,7 @@ func (s *ReleaseServer) RunAndHold() {
 			UpdateFunc: func(old, new interface{}) {
 				if !reflect.DeepEqual(old, new) {
 					glog.Infoln("got one updated event", new.(*hapi.Release))
-					s.doStuff(new.(*hapi.Release))
+					s.UpdateRelease(new.(*hapi.Release))
 				}
 			},
 		},
@@ -163,124 +163,116 @@ func (s *ReleaseServer) doStuff(release *hapi.Release) {
 }
 
 // UpdateRelease takes an existing release and new information, and upgrades the release.
-func (s *ReleaseServer) UpdateRelease(c ctx.Context, req *services.UpdateReleaseRequest) (*services.UpdateReleaseResponse, error) {
-	/*	currentRelease, updatedRelease, err := s.prepareUpdate(req)
-		if err != nil {
-			return nil, err
+func (s *ReleaseServer) UpdateRelease(rel *hapi.Release) error {
+	currentRelease, err := s.prepareUpdate(rel)
+	if err != nil {
+		return err
+	}
+	fmt.Println(currentRelease.Status)
+	err = s.performUpdate(currentRelease, rel)
+	if err != nil {
+		return err
+	}
+	if !rel.Spec.DryRun {
+		if err := s.env.Releases.Create(rel); err != nil {
+			return err
 		}
-
-		res, err := s.performUpdate(currentRelease, updatedRelease, req)
-		if err != nil {
-			return res, err
-		}
-
-		if !req.DryRun {
-			if err := s.env.Releases.Create(updatedRelease); err != nil {
-				return res, err
-			}
-		}*/
-	res := &services.UpdateReleaseResponse{}
-
-	return res, nil
+	}
+	return nil
 }
 
-func (s *ReleaseServer) performUpdate(originalRelease, updatedRelease *release.Release, req *services.UpdateReleaseRequest) (*services.UpdateReleaseResponse, error) {
-	res := &services.UpdateReleaseResponse{Release: updatedRelease}
-	/*
-		if req.DryRun {
-			log.Printf("Dry run for %s", updatedRelease.Name)
-			return res, nil
-		}
+func (s *ReleaseServer) performUpdate(originalRelease, updatedRelease *hapi.Release) error {
+	updatedRelease.Status = tc_api.ReleaseStatus{}
+	updatedRelease.Status.Status = new(release.Status)
+	/*	originalRelease.Status = tc_api.ReleaseStatus{}
+		originalRelease.Status.Status = new(release.Status)*/
 
-		// pre-upgrade hooks
-		if !req.DisableHooks {
-			if err := s.execHook(updatedRelease.Hooks, updatedRelease.Name, updatedRelease.Namespace, preUpgrade, req.Timeout); err != nil {
-				return res, err
-			}
+	//TODO handle dry run sauman
+	/*	if req.DryRun {
+		log.Printf("Dry run for %s", updatedRelease.Name)
+		return res, nil
+	}*/
+	// pre-upgrade hooks
+	if !updatedRelease.Spec.DisableHooks {
+		if err := s.execHook(updatedRelease.Spec.Hooks, updatedRelease.Name, updatedRelease.Namespace, preUpgrade, updatedRelease.Spec.Timeout); err != nil {
+			return err
 		}
-
-		if err := s.performKubeUpdate(originalRelease, updatedRelease, req.Recreate); err != nil {
-			log.Printf("warning: Release Upgrade %q failed: %s", updatedRelease.Name, err)
-			originalRelease.Info.Status.Code = release.Status_SUPERSEDED
-			updatedRelease.Info.Status.Code = release.Status_FAILED
-			s.recordRelease(originalRelease, true)
-			s.recordRelease(updatedRelease, false)
-			return res, err
-		}
-
-		// post-upgrade hooks
-		if !req.DisableHooks {
-			if err := s.execHook(updatedRelease.Hooks, updatedRelease.Name, updatedRelease.Namespace, postUpgrade, req.Timeout); err != nil {
-				return res, err
-			}
-		}
-
-		originalRelease.Info.Status.Code = release.Status_SUPERSEDED
+	}
+	if err := s.performKubeUpdate(originalRelease, updatedRelease, updatedRelease.Spec.Recreate); err != nil {
+		log.Printf("warning: Release Upgrade %q failed: %s", updatedRelease.Name, err)
+		originalRelease.Status.Status.Code = release.Status_SUPERSEDED
+		updatedRelease.Status.Status.Code = release.Status_FAILED
 		s.recordRelease(originalRelease, true)
-
-		updatedRelease.Info.Status.Code = release.Status_DEPLOYED*/
-
-	return res, nil
+		s.recordRelease(updatedRelease, false)
+		return err
+	}
+	// post-upgrade hooks
+	if !updatedRelease.Spec.DisableHooks {
+		if err := s.execHook(updatedRelease.Spec.Hooks, updatedRelease.Name, updatedRelease.Namespace, postUpgrade, updatedRelease.Spec.Timeout); err != nil {
+			return err
+		}
+	}
+	originalRelease.Status.Status.Code = release.Status_SUPERSEDED
+	s.recordRelease(originalRelease, true)
+	updatedRelease.Status.Status.Code = release.Status_DEPLOYED
+	return nil
 }
 
 // reuseValues copies values from the current release to a new release if the new release does not have any values.
 //
 // If the request already has values, or if there are no values in the current release, this does nothing.
-func (s *ReleaseServer) reuseValues(req *services.UpdateReleaseRequest, current *release.Release) {
-	if (req.Values == nil || req.Values.Raw == "" || req.Values.Raw == "{}\n") && current.Config != nil && current.Config.Raw != "" && current.Config.Raw != "{}\n" {
-		log.Printf("Copying values from %s (v%d) to new release.", current.Name, current.Version)
-		req.Values = current.Config
+func (s *ReleaseServer) reuseValues(req *hapi.Release, current *hapi.Release) {
+	if (req.Spec.Config == nil || req.Spec.Config.Raw == "" || req.Spec.Config.Raw == "{}\n") && current.Spec.Config != nil && current.Spec.Config.Raw != "" && current.Spec.Config.Raw != "{}\n" {
+		log.Printf("Copying values from %s (v%d) to new release.", current.Name, current.Spec.Version)
+		req.Spec.Config = current.Spec.Config
 	}
 }
 
 // prepareUpdate builds an updated release for an update operation.
-func (s *ReleaseServer) prepareUpdate(req *services.UpdateReleaseRequest) (*release.Release, *release.Release, error) {
-	if !ValidName.MatchString(req.Name) {
-		return nil, nil, errMissingRelease
+func (s *ReleaseServer) prepareUpdate(rel *hapi.Release) (*hapi.Release, error) {
+	if !ValidName.MatchString(rel.Name) {
+		return nil, errMissingRelease
 	}
-
-	if req.Chart == nil {
-		return nil, nil, errMissingChart
+	if rel.Spec.Chart.Inline == nil {
+		return nil, errMissingChart
 	}
-
 	// finds the non-deleted release with the given name
-	currentRelease, err := s.env.Releases.Last(req.Name)
+	currentRelease, err := s.env.Releases.Last(rel.Name)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// If new values were not supplied in the upgrade, re-use the existing values.
-	s.reuseValues(req, currentRelease)
+	s.reuseValues(rel, currentRelease)
 
 	// Increment revision count. This is passed to templates, and also stored on
 	// the release object.
-	revision := currentRelease.Version + 1
-
+	revision := currentRelease.Spec.Version + 1
 	ts := timeconv.Now()
 	options := chartutil.ReleaseOptions{
-		Name:      req.Name,
+		Name:      rel.Name,
 		Time:      ts,
 		Namespace: currentRelease.Namespace,
 		IsUpgrade: true,
 		Revision:  int(revision),
 	}
 
-	valuesToRender, err := chartutil.ToRenderValues(req.Chart, req.Values, options)
+	valuesToRender, err := chartutil.ToRenderValues(rel.Spec.Chart.Inline, rel.Spec.Config, options)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	hooks, manifestDoc, notesTxt, err := s.renderResources(req.Chart, valuesToRender)
+	hooks, manifestDoc, notesTxt, err := s.renderResources(rel.Spec.Chart.Inline, valuesToRender)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Store an updated release.
-	updatedRelease := &release.Release{
-		Name:      req.Name,
+	/*	updatedRelease := &release.Release{
+		Name:      rel.Name,
 		Namespace: currentRelease.Namespace,
-		Chart:     req.Chart,
-		Config:    req.Values,
+		Chart:     rel.Spec.Chart,
+		Config:    rel.Spec.Config,
 		Info: &release.Info{
 			FirstDeployed: currentRelease.Info.FirstDeployed,
 			LastDeployed:  ts,
@@ -289,13 +281,17 @@ func (s *ReleaseServer) prepareUpdate(req *services.UpdateReleaseRequest) (*rele
 		Version:  revision,
 		Manifest: manifestDoc.String(),
 		Hooks:    hooks,
-	}
+	}*/
+	//rel is the updated release
+	rel.Spec.Hooks = hooks
+	rel.Spec.Version = revision
+	rel.Spec.Manifest = manifestDoc.String()
 
 	if len(notesTxt) > 0 {
-		updatedRelease.Info.Status.Notes = notesTxt
+		rel.Status.Status.Notes = notesTxt
 	}
 	err = validateManifest(s.env.KubeClient, currentRelease.Namespace, manifestDoc.Bytes())
-	return currentRelease, updatedRelease, err
+	return currentRelease, err
 }
 
 // RollbackRelease rolls back to a previous version of the given release.
@@ -359,10 +355,10 @@ func (s *ReleaseServer) performRollback(currentRelease, targetRelease *release.R
 	return res, nil
 }
 
-func (s *ReleaseServer) performKubeUpdate(currentRelease, targetRelease *release.Release, recreate bool) error {
+func (s *ReleaseServer) performKubeUpdate(currentRelease, targetRelease *hapi.Release, recreate bool) error {
 	kubeCli := s.env.KubeClient
-	current := bytes.NewBufferString(currentRelease.Manifest)
-	target := bytes.NewBufferString(targetRelease.Manifest)
+	current := bytes.NewBufferString(currentRelease.Spec.Manifest)
+	target := bytes.NewBufferString(targetRelease.Spec.Manifest)
 	return kubeCli.Update(targetRelease.Namespace, current, target, recreate)
 }
 
@@ -434,9 +430,6 @@ func (s *ReleaseServer) InstallRelease(rel *hapi.Release) error {
 	err := s.prepareRelease(rel)
 	if err != nil {
 		log.Printf("Failed install prepare step: %s", err)
-		//res := &services.InstallReleaseResponse{Release: rel}
-		//res := &services.InstallReleaseResponse{}
-
 		// On dry run, append the manifest contents to a failed release. This is
 		// a stop-gap until we can revisit an error backchannel post-2.0.
 		//TODO check later
@@ -473,34 +466,13 @@ func (s *ReleaseServer) prepareRelease(rel *hapi.Release) error {
 		Revision:  revision,
 		IsInstall: true,
 	}
-
-	valuesToRender, err := chartutil.ToRenderValues(rel.Spec.Chart.Inline, rel.Spec.Chart.Inline.Values, options) //TODO check rel.Spec.Config
-
+	valuesToRender, err := chartutil.ToRenderValues(rel.Spec.Chart.Inline, rel.Spec.Config, options) //TODO check rel.Spec.Config
 	if err != nil {
 
 		return err
 	}
-
 	hooks, manifestDoc, _, err := s.renderResources(rel.Spec.Chart.Inline, valuesToRender) // noteTxt
 	if err != nil {
-		// Return a release with partial data so that client can show debugging
-		// information.
-		/*rel := &release.Release{
-			Name:      req.Name,
-			Namespace: req.Namespace,
-			Chart:     req.Chart,
-			Config:    req.Values,
-			Info: &release.Info{
-				FirstDeployed: ts,
-				LastDeployed:  ts,
-				Status:        &release.Status{Code: release.Status_UNKNOWN},
-			},
-			Version: 0,
-		}
-		if manifestDoc != nil {
-			rel.Manifest = manifestDoc.String()
-		}
-		return rel, err*/
 		return err
 	}
 
@@ -677,7 +649,7 @@ func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 		if err := s.execHook(rel.Spec.Hooks, rel.Name, rel.ObjectMeta.Namespace, postInstall, rel.Spec.Timeout); err != nil {
 			log.Printf("warning: Release %q failed post-install: %s", rel.Name, err)
 			rel.Status.Status.Code = release.Status_FAILED
-			//s.recordRelease(r, false)  TODO handle record part
+			s.recordRelease(rel, false)
 			return err
 		}
 	}

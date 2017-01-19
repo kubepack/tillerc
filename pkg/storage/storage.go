@@ -21,9 +21,9 @@ import (
 	"log"
 
 	hapi "github.com/appscode/tillerc/api"
+	relutil "github.com/appscode/tillerc/pkg/releaseutil"
 	"github.com/appscode/tillerc/pkg/storage/driver"
 	rspb "k8s.io/helm/pkg/proto/hapi/release"
-	relutil "k8s.io/helm/pkg/releaseutil"
 )
 
 // Storage represents a storage engine for a Release.
@@ -144,19 +144,17 @@ func (s *Storage) History(name string) ([]*hapi.Release, error) {
 }
 
 // Last fetches the last revision of the named release.
-func (s *Storage) Last(name string) (*rspb.Release, error) {
-	/*	h, err := s.History(name)
-		if err != nil {
-			return nil, err
-		}
-		if len(h) == 0 {
-			return nil, fmt.Errorf("no revision for release %q", name)
-		}
+func (s *Storage) Last(name string) (*hapi.Release, error) {
+	h, err := s.History(name)
+	if err != nil {
+		return nil, err
+	}
+	if len(h) == 0 {
+		return nil, fmt.Errorf("no revision for release %q", name)
+	}
 
-		relutil.Reverse(h, relutil.SortByRevision)
-		return h[0], nil*/
-	test := &rspb.Release{}
-	return test, nil
+	relutil.Reverse(h, relutil.SortByRevision)
+	return h[0], nil
 }
 
 // makeKey concatenates a release name and version into
