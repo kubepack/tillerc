@@ -168,12 +168,10 @@ func (s *ReleaseServer) RunForRollback() {
 	fieldSelector := fields.SelectorFromSet(sets)
 	lw := &cache.ListWatch{
 		ListFunc: func(opts api.ListOptions) (runtime.Object, error) {
-			fmt.Println("rrrrrrrrrrrrrrrrrrrrrrr\n\n")
 			opts.FieldSelector = fieldSelector
 			return s.clientset.Core().Events(api.NamespaceAll).List(opts)
 		},
 		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
-			fmt.Println("tttttttttttttttttttttt\n\n")
 			options.FieldSelector = fieldSelector
 			return s.clientset.Core().Events(api.NamespaceAll).Watch(options)
 		},
