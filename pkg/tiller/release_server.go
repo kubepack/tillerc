@@ -44,17 +44,17 @@ import (
 	"github.com/appscode/tillerc/pkg/storage"
 	"github.com/appscode/tillerc/pkg/storage/driver"
 	"github.com/appscode/tillerc/pkg/tiller/environment"
-	ctx "golang.org/x/net/context"
+	"k8s.io/client-go/1.4/pkg/util/json"
 	"k8s.io/helm/pkg/chartutil"
 	"k8s.io/helm/pkg/kube"
 	"k8s.io/helm/pkg/proto/hapi/chart"
 	"k8s.io/helm/pkg/proto/hapi/release"
-	"k8s.io/helm/pkg/proto/hapi/services"
 	"k8s.io/helm/pkg/timeconv"
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	"k8s.io/kubernetes/pkg/client/typed/discovery"
 	"k8s.io/kubernetes/pkg/fields"
+	"strconv"
 )
 
 // releaseNameMaxLen is the maximum length of a release name.
@@ -102,6 +102,17 @@ type ReleaseServer struct {
 	// sync time to sync the list.
 	SyncPeriod time.Duration
 	Config     *rest.Config
+}
+
+type RollbackReq struct {
+	// dry_run, if true, will run through the release logic but no create
+	DryRun bool `protobuf:"varint,2,opt,name=dry_run,json=dryRun" json:"dry_run,omitempty"`
+	// DisableHooks causes the server to skip running any hooks for the rollback
+	DisableHooks bool `protobuf:"varint,3,opt,name=disable_hooks,json=disableHooks" json:"disable_hooks,omitempty"`
+	// Performs pods restart for resources if applicable
+	Recreate bool `protobuf:"varint,5,opt,name=recreate" json:"recreate,omitempty"`
+	// timeout specifies the max amount of time any kubernetes client command can run.
+	Timeout int64 `protobuf:"varint,6,opt,name=timeout" json:"timeout,omitempty"`
 }
 
 func New(env *environment.Environment, c *rest.Config) *ReleaseServer {
@@ -181,8 +192,8 @@ func (s *ReleaseServer) RunForRollback() {
 		s.SyncPeriod,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				fmt.Println("EVENT FOUND")
-				s.doStuff()
+				glog.Infoln("got one added event for rollback", obj.(*api.Event))
+				s.RollbackRelease(obj.(*api.Event))
 			},
 			DeleteFunc: func(obj interface{}) {
 				s.doStuff()
@@ -332,64 +343,67 @@ func (s *ReleaseServer) prepareUpdate(rel *hapi.Release) (*hapi.Release, error) 
 }
 
 // RollbackRelease rolls back to a previous version of the given release.
-func (s *ReleaseServer) RollbackRelease(c ctx.Context, req *services.RollbackReleaseRequest) (*services.RollbackReleaseResponse, error) {
-	/*	currentRelease, targetRelease, err := s.prepareRollback(req)
-		if err != nil {
-			return nil, err
+func (s *ReleaseServer) RollbackRelease(e *api.Event) error {
+	rollbackReq := &RollbackReq{}
+	err := json.Unmarshal([]byte(e.Message), rollbackReq)
+	if err != nil {
+		return err
+	}
+	currentRelease, targetRelease, err := s.prepareRollback(e)
+	if err != nil {
+		return err
+	}
+	err = s.performRollback(currentRelease, targetRelease, e)
+	if err != nil {
+		return err
+	}
+	fmt.Println(targetRelease)
+	if !rollbackReq.DryRun {
+		if err := s.env.Releases.Create(targetRelease); err != nil {
+			return err
 		}
-
-		res, err := s.performRollback(currentRelease, targetRelease, req)
-		if err != nil {
-			return res, err
-		}
-
-		if !req.DryRun {
-			if err := s.env.Releases.Create(targetRelease); err != nil {
-				return res, err
-			}
-		}*/
-	res := &services.RollbackReleaseResponse{}
-
-	return res, nil
+	}
+	return nil
 }
 
-func (s *ReleaseServer) performRollback(currentRelease, targetRelease *release.Release, req *services.RollbackReleaseRequest) (*services.RollbackReleaseResponse, error) {
-	res := &services.RollbackReleaseResponse{Release: targetRelease}
-	/*
-		if req.DryRun {
+func (s *ReleaseServer) performRollback(currentRelease, targetRelease *hapi.Release, e *api.Event) error {
+	rollbackReq := &RollbackReq{}
+	err := json.Unmarshal([]byte(e.Message), rollbackReq)
+	if err != nil {
+		return err
+	}
+	/*		if req.DryRun {
 			log.Printf("Dry run for %s", targetRelease.Name)
 			return res, nil
-		}
+		}*/
 
-		// pre-rollback hooks
-		if !req.DisableHooks {
-			if err := s.execHook(targetRelease.Hooks, targetRelease.Name, targetRelease.Namespace, preRollback, req.Timeout); err != nil {
-				return res, err
-			}
+	// pre-rollback hooks
+	if !rollbackReq.DisableHooks {
+		if err := s.execHook(targetRelease.Spec.Hooks, targetRelease.Name, targetRelease.Namespace, preRollback, rollbackReq.Timeout); err != nil {
+			return err
 		}
-
-		if err := s.performKubeUpdate(currentRelease, targetRelease, req.Recreate); err != nil {
-			log.Printf("warning: Release Rollback %q failed: %s", targetRelease.Name, err)
-			currentRelease.Info.Status.Code = release.Status_SUPERSEDED
-			targetRelease.Info.Status.Code = release.Status_FAILED
-			s.recordRelease(currentRelease, true)
-			s.recordRelease(targetRelease, false)
-			return res, err
-		}
-
-		// post-rollback hooks
-		if !req.DisableHooks {
-			if err := s.execHook(targetRelease.Hooks, targetRelease.Name, targetRelease.Namespace, postRollback, req.Timeout); err != nil {
-				return res, err
-			}
-		}
-
-		currentRelease.Info.Status.Code = release.Status_SUPERSEDED
+	}
+	if err := s.performKubeUpdate(currentRelease, targetRelease, rollbackReq.Recreate); err != nil {
+		log.Printf("warning: Release Rollback %q failed: %s", targetRelease.Name, err)
+		currentRelease.Status.Status.Code = release.Status_SUPERSEDED
+		targetRelease.Status.Status.Code = release.Status_FAILED
 		s.recordRelease(currentRelease, true)
-
-		targetRelease.Info.Status.Code = release.Status_DEPLOYED*/
-
-	return res, nil
+		s.recordRelease(targetRelease, false)
+		return err
+	}
+	// post-rollback hooks
+	if rollbackReq.DisableHooks {
+		if err := s.execHook(targetRelease.Spec.Hooks, targetRelease.Name, targetRelease.Namespace, postRollback, rollbackReq.Timeout); err != nil {
+			return err
+		}
+	}
+	currentRelease.Status.Status.Code = release.Status_SUPERSEDED
+	s.recordRelease(currentRelease, true)
+	// TODO handle release part
+	targetRelease.Status = tc_api.ReleaseStatus{}
+	targetRelease.Status.Status = new(release.Status)
+	targetRelease.Status.Status.Code = release.Status_DEPLOYED
+	return nil
 }
 
 func (s *ReleaseServer) performKubeUpdate(currentRelease, targetRelease *hapi.Release, recreate bool) error {
@@ -401,52 +415,54 @@ func (s *ReleaseServer) performKubeUpdate(currentRelease, targetRelease *hapi.Re
 
 // prepareRollback finds the previous release and prepares a new release object with
 //  the previous release's configuration
-func (s *ReleaseServer) prepareRollback(req *services.RollbackReleaseRequest) (*release.Release, *release.Release, error) {
-	/*switch {
-	case !ValidName.MatchString(req.Name):
+func (s *ReleaseServer) prepareRollback(e *api.Event) (*hapi.Release, *hapi.Release, error) {
+	r := strings.SplitN(e.InvolvedObject.Name, "-", 2)
+	var version int32
+	version = int32(0)
+	var err error
+	releaseName := r[0]
+	if len(r) == 2 {
+		val, err := strconv.Atoi(strings.TrimPrefix(r[1], "v"))
+		if err != nil {
+			return nil, nil, errors.New("Version not found")
+		}
+		version = int32(val)
+	}
+	switch {
+	case !ValidName.MatchString(releaseName):
 		return nil, nil, errMissingRelease
-	case req.Version < 0:
+	case version < 0:
 		return nil, nil, errInvalidRevision
 	}
 
-	crls, err := s.env.Releases.Last(req.Name)
+	crls, err := s.env.Releases.Last(releaseName)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	rbv := req.Version
-	if req.Version == 0 {
-		rbv = crls.Version - 1
+	rbv := version
+	if version == 0 {
+		rbv = crls.Spec.Version - 1
 	}
+	log.Printf("rolling back %s (current: v%d, target: v%d)", releaseName, crls.Spec.Version, rbv)
 
-	log.Printf("rolling back %s (current: v%d, target: v%d)", req.Name, crls.Version, rbv)
-
-	prls, err := s.env.Releases.Get(req.Name, rbv)
+	prls, err := s.env.Releases.Get(releaseName, rbv)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	// Store a new release object with previous release's configuration
-	target := &release.Release{
-		Name:      req.Name,
-		Namespace: crls.Namespace,
-		Chart:     prls.Chart,
-		Config:    prls.Config,
-		Info: &release.Info{
-			FirstDeployed: crls.Info.FirstDeployed,
-			LastDeployed:  timeconv.Now(),
-			Status: &release.Status{
-				Code:  release.Status_UNKNOWN,
-				Notes: prls.Info.Status.Notes,
-			},
+	target := &hapi.Release{
+		ObjectMeta: prls.ObjectMeta,
+		TypeMeta:   prls.TypeMeta,
+		Spec: tc_api.ReleaseSpec{
+			Chart:    prls.Spec.Chart,
+			Config:   prls.Spec.Config,
+			Version:  crls.Spec.Version + 1,
+			Manifest: prls.Spec.Manifest,
+			Hooks:    prls.Spec.Hooks,
 		},
-		Version:  crls.Version + 1,
-		Manifest: prls.Manifest,
-		Hooks:    prls.Hooks,
 	}
-	*/
-	crls := &release.Release{}
-	target := &release.Release{}
+	target.ObjectMeta = prls.ObjectMeta
+	target.TypeMeta = prls.TypeMeta
 	return crls, target, nil
 }
 

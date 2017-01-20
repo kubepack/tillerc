@@ -35,6 +35,7 @@ import (
 
 	hapi "github.com/appscode/tillerc/api"
 	rspb "k8s.io/helm/pkg/proto/hapi/release"
+	"k8s.io/kubernetes/pkg/api/unversioned"
 	kblabels "k8s.io/kubernetes/pkg/labels"
 )
 
@@ -67,24 +68,33 @@ func (version *ReleaseVersions) Name() string {
 // Get fetches the release named by key. The corresponding release is returned
 // or error if not found.
 func (versions *ReleaseVersions) Get(key string) (*hapi.Release, error) {
-	/*	// fetch the configmap holding the release named by key
-		obj, err := versions.impl.Get(key)
-		if err != nil {
-			if kberrs.IsNotFound(err) {
-				return nil, ErrReleaseNotFound
-			}
+	// fetch the configmap holding the release named by key
+	obj, err := versions.impl.Get(key)
+	if err != nil {
+		if kberrs.IsNotFound(err) {
+			return nil, ErrReleaseNotFound
+		}
 
-			logerrf(err, "get: failed to get %q", key)
-			return nil, err
-		}
-		// found the configmap, decode the base64 data string
-		// TODO r, err := decodeRelease(obj.Data["release"])
-		if err != nil {
-			logerrf(err, "get: failed to decode data %q", key)
-			return nil, err
-		}
-		// return the release object*/
-	r := &hapi.Release{}
+		logerrf(err, "get: failed to get %q", key)
+		return nil, err
+	}
+
+	// return the release object
+	// TODO sauman add more info
+	s := strings.SplitN(obj.Name, "-", 2)
+	meta := api.ObjectMeta{
+		Namespace: obj.Namespace,
+		Name:      s[0],
+	}
+	type_ := unversioned.TypeMeta{
+		Kind:       "Release",
+		APIVersion: "helm.sh/v1beta1",
+	}
+	r := &hapi.Release{
+		ObjectMeta: meta,
+		TypeMeta:   type_,
+		Spec:       obj.Spec.ReleaseSpec,
+	}
 	return r, nil
 }
 
