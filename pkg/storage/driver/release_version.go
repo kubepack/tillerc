@@ -137,7 +137,6 @@ func (versions *ReleaseVersions) Query(labels map[string]string) ([]*hapi.Releas
 	for k, v := range labels {
 		ls[k] = v
 	}
-
 	opts := api.ListOptions{LabelSelector: ls.AsSelector()}
 
 	list, err := versions.impl.List(opts)
@@ -145,7 +144,6 @@ func (versions *ReleaseVersions) Query(labels map[string]string) ([]*hapi.Releas
 		logerrf(err, "query: failed to query with labels")
 		return nil, err
 	}
-
 	if len(list.Items) == 0 {
 		return nil, ErrReleaseNotFound
 	}

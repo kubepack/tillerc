@@ -48,6 +48,7 @@ import (
 	"k8s.io/helm/pkg/chartutil"
 	"k8s.io/helm/pkg/kube"
 	"k8s.io/helm/pkg/proto/hapi/chart"
+	hapi_chart "k8s.io/helm/pkg/proto/hapi/chart"
 	"k8s.io/helm/pkg/proto/hapi/release"
 	"k8s.io/helm/pkg/timeconv"
 	"k8s.io/kubernetes/pkg/api/unversioned"
@@ -353,16 +354,23 @@ func (s *ReleaseServer) RollbackRelease(e *api.Event) error {
 	if err != nil {
 		return err
 	}
+	targetRelease.Spec.DryRun = rollbackReq.DryRun
+	targetRelease.Spec.DisableHooks = rollbackReq.DisableHooks
+	targetRelease.Spec.Timeout = rollbackReq.Timeout
+	if err != nil {
+		return err
+	}
+
 	err = s.performRollback(currentRelease, targetRelease, e)
 	if err != nil {
 		return err
 	}
-	fmt.Println(targetRelease)
-	if !rollbackReq.DryRun {
-		if err := s.env.Releases.Create(targetRelease); err != nil {
-			return err
-		}
-	}
+	/*	fmt.Println(targetRelease)
+		if !rollbackReq.DryRun {
+			if err := s.env.Releases.Create(targetRelease); err != nil {
+				return err
+			}
+		}*/
 	return nil
 }
 
@@ -372,27 +380,27 @@ func (s *ReleaseServer) performRollback(currentRelease, targetRelease *hapi.Rele
 	if err != nil {
 		return err
 	}
-	/*		if req.DryRun {
-			log.Printf("Dry run for %s", targetRelease.Name)
-			return res, nil
-		}*/
 
 	// pre-rollback hooks
-	if !rollbackReq.DisableHooks {
+	/*	if !rollbackReq.DisableHooks {
 		if err := s.execHook(targetRelease.Spec.Hooks, targetRelease.Name, targetRelease.Namespace, preRollback, rollbackReq.Timeout); err != nil {
 			return err
 		}
+	}*/
+	if err := s.performKubeUpdateForRollback(currentRelease, targetRelease, rollbackReq.Recreate); err != nil {
+		log.Printf("warning: Release Rollback %q failed: %s", targetRelease.Name, err)
+		return err
 	}
-	if err := s.performKubeUpdate(currentRelease, targetRelease, rollbackReq.Recreate); err != nil {
+	/*	if err := s.performKubeUpdate(currentRelease, targetRelease, rollbackReq.Recreate); err != nil {
 		log.Printf("warning: Release Rollback %q failed: %s", targetRelease.Name, err)
 		currentRelease.Status.Status.Code = release.Status_SUPERSEDED
 		targetRelease.Status.Status.Code = release.Status_FAILED
 		s.recordRelease(currentRelease, true)
 		s.recordRelease(targetRelease, false)
 		return err
-	}
+	}*/
 	// post-rollback hooks
-	if rollbackReq.DisableHooks {
+	/*if rollbackReq.DisableHooks {
 		if err := s.execHook(targetRelease.Spec.Hooks, targetRelease.Name, targetRelease.Namespace, postRollback, rollbackReq.Timeout); err != nil {
 			return err
 		}
@@ -402,8 +410,19 @@ func (s *ReleaseServer) performRollback(currentRelease, targetRelease *hapi.Rele
 	// TODO handle release part
 	targetRelease.Status = tc_api.ReleaseStatus{}
 	targetRelease.Status.Status = new(release.Status)
-	targetRelease.Status.Status.Code = release.Status_DEPLOYED
+	targetRelease.Status.Status.Code = release.Status_DEPLOYED*/
 	return nil
+}
+
+func (s *ReleaseServer) performKubeUpdateForRollback(currentRelease, targetRelease *hapi.Release, recreate bool) error {
+	crntReleaseFromKube, err := s.Client.Release(targetRelease.Namespace).Get(targetRelease.Name)
+	if err != nil {
+		return err
+	}
+	targetRelease.TypeMeta = crntReleaseFromKube.TypeMeta
+	targetRelease.ObjectMeta = crntReleaseFromKube.ObjectMeta
+	_, err = s.Client.Release(targetRelease.Namespace).Update(targetRelease)
+	return err
 }
 
 func (s *ReleaseServer) performKubeUpdate(currentRelease, targetRelease *hapi.Release, recreate bool) error {
@@ -434,12 +453,11 @@ func (s *ReleaseServer) prepareRollback(e *api.Event) (*hapi.Release, *hapi.Rele
 	case version < 0:
 		return nil, nil, errInvalidRevision
 	}
-
 	crls, err := s.env.Releases.Last(releaseName)
 	if err != nil {
+		log.Print(err)
 		return nil, nil, err
 	}
-
 	rbv := version
 	if version == 0 {
 		rbv = crls.Spec.Version - 1
@@ -461,8 +479,7 @@ func (s *ReleaseServer) prepareRollback(e *api.Event) (*hapi.Release, *hapi.Rele
 			Hooks:    prls.Spec.Hooks,
 		},
 	}
-	target.ObjectMeta = prls.ObjectMeta
-	target.TypeMeta = prls.TypeMeta
+	target.Status = crls.Status
 	return crls, target, nil
 }
 
@@ -519,7 +536,10 @@ func (s *ReleaseServer) prepareRelease(rel *hapi.Release) error {
 		Revision:  revision,
 		IsInstall: true,
 	}
-	valuesToRender, err := chartutil.ToRenderValues(rel.Spec.Chart.Inline, rel.Spec.Config, options) //TODO check rel.Spec.Config
+	if rel.Spec.Config == nil {
+		rel.Spec.Config = &hapi_chart.Config{}
+	}
+	valuesToRender, err := chartutil.ToRenderValues(rel.Spec.Chart.Inline, rel.Spec.Config, options)
 	if err != nil {
 
 		return err

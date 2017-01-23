@@ -38,7 +38,7 @@ func TestRollback(t *testing.T) {
 		InvolvedObject: kapi.ObjectReference{
 			Kind:      "release",
 			Namespace: "default",
-			Name:      "testbusybox1-v1",
+			Name:      "testbusybox1-v1", //releaseversion name
 		},
 		Reason:  "releaseRollback",
 		Message: string(reqByte),

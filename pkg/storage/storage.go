@@ -135,8 +135,13 @@ func (s *Storage) Deployed(name string) (*rspb.Release, error) {
 // returns ErrReleaseNotFound if no such release name exists.
 func (s *Storage) History(name string) ([]*hapi.Release, error) {
 	log.Printf("Getting release history for '%s'\n", name)
-
-	l, err := s.Driver.Query(map[string]string{"NAME": name, "OWNER": "TILLER"})
+	m := make(map[string]string)
+	m["NAME"] = name
+	m["OWNER"] = "TILLER"
+	if s == nil {
+		return nil, fmt.Errorf("No driver found")
+	}
+	l, err := s.Driver.Query(m)
 	if err != nil {
 		return nil, err
 	}
@@ -152,8 +157,9 @@ func (s *Storage) Last(name string) (*hapi.Release, error) {
 	if len(h) == 0 {
 		return nil, fmt.Errorf("no revision for release %q", name)
 	}
-
 	relutil.Reverse(h, relutil.SortByRevision)
+	h[0].Kind = "Release"
+	h[0].APIVersion = "helm.sh/v1beta1"
 	return h[0], nil
 }
 
