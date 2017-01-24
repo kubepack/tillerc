@@ -196,19 +196,9 @@ func (s *ReleaseServer) RunForRollback() {
 				glog.Infoln("got one added event for rollback", obj.(*api.Event))
 				s.RollbackRelease(obj.(*api.Event))
 			},
-			DeleteFunc: func(obj interface{}) {
-				s.doStuff()
-			},
-			UpdateFunc: func(old, new interface{}) {
-				s.doStuff()
-			},
 		},
 	)
 	controller.Run(wait.NeverStop)
-}
-
-func (s *ReleaseServer) doStuff() {
-
 }
 
 // UpdateRelease takes an existing release and new information, and upgrades the release.
