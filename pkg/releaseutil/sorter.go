@@ -20,7 +20,7 @@ import (
 	"sort"
 
 	hapi "github.com/appscode/tillerc/api"
-	rspb "k8s.io/helm/pkg/proto/hapi/release"
+	//rspb "k8s.io/helm/pkg/proto/hapi/release"
 )
 
 type sorter struct {
@@ -33,7 +33,7 @@ func (s *sorter) Less(i, j int) bool { return s.less(i, j) }
 func (s *sorter) Swap(i, j int)      { s.list[i], s.list[j] = s.list[j], s.list[i] }
 
 // Reverse reverses the list of releases sorted by the sort func.
-func Reverse(list []*rspb.Release, sortFn func([]*rspb.Release)) {
+func Reverse(list []*hapi.Release, sortFn func([]*hapi.Release)) {
 	sortFn(list)
 	for i, j := 0, len(list)-1; i < j; i, j = i+1, j-1 {
 		list[i], list[j] = list[j], list[i]
@@ -65,19 +65,18 @@ func SortByDate(list []*rspb.Release) {
 	}
 	sort.Sort(s)
 }
-
+*/
 // SortByRevision returns the list of releases sorted by a
 // release's revision number (release.Version).
-func SortByRevision(list []*rspb.Release) {
+func SortByRevision(list []*hapi.Release) {
 	s := &sorter{list: list}
 	s.less = func(i, j int) bool {
-		vi := s.list[i].Version
-		vj := s.list[j].Version
+		vi := s.list[i].Spec.Version
+		vj := s.list[j].Spec.Version
 		return vi < vj
 	}
 	sort.Sort(s)
 }
-*/
 
 func SortByRevisionVersion(list []*hapi.Release) {
 	s := &sorter{list: list}

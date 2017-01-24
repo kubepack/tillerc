@@ -30,3 +30,12 @@ spec:
               imagePullPolicy: Always
               image: nginx
               imageTag: latest
+  dryrun : false
+  config:
+    raw : |
+      mypod:
+        Namespace: default
+        mypod:
+          imagePullPolicy: Always
+          image: nginx
+          imageTag: latest

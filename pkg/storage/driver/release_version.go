@@ -17,17 +17,13 @@ limitations under the License.
 package driver
 
 import (
-	"bytes"
-	"compress/gzip"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"strconv"
 	"time"
 
 	"github.com/appscode/tillerc/client/clientset"
-	"github.com/golang/protobuf/proto"
 	"k8s.io/kubernetes/pkg/api"
 	kberrs "k8s.io/kubernetes/pkg/api/errors"
 
@@ -35,6 +31,7 @@ import (
 
 	hapi "github.com/appscode/tillerc/api"
 	rspb "k8s.io/helm/pkg/proto/hapi/release"
+	"k8s.io/kubernetes/pkg/api/unversioned"
 	kblabels "k8s.io/kubernetes/pkg/labels"
 )
 
@@ -67,24 +64,33 @@ func (version *ReleaseVersions) Name() string {
 // Get fetches the release named by key. The corresponding release is returned
 // or error if not found.
 func (versions *ReleaseVersions) Get(key string) (*hapi.Release, error) {
-	/*	// fetch the configmap holding the release named by key
-		obj, err := versions.impl.Get(key)
-		if err != nil {
-			if kberrs.IsNotFound(err) {
-				return nil, ErrReleaseNotFound
-			}
+	// fetch the configmap holding the release named by key
+	obj, err := versions.impl.Get(key)
+	if err != nil {
+		if kberrs.IsNotFound(err) {
+			return nil, ErrReleaseNotFound
+		}
 
-			logerrf(err, "get: failed to get %q", key)
-			return nil, err
-		}
-		// found the configmap, decode the base64 data string
-		// TODO r, err := decodeRelease(obj.Data["release"])
-		if err != nil {
-			logerrf(err, "get: failed to decode data %q", key)
-			return nil, err
-		}
-		// return the release object*/
-	r := &hapi.Release{}
+		logerrf(err, "get: failed to get %q", key)
+		return nil, err
+	}
+
+	// return the release object
+	// TODO sauman add more info
+	s := strings.SplitN(obj.Name, "-", 2)
+	meta := api.ObjectMeta{
+		Namespace: obj.Namespace,
+		Name:      s[0],
+	}
+	type_ := unversioned.TypeMeta{
+		Kind:       "Release",
+		APIVersion: "helm.sh/v1beta1",
+	}
+	r := &hapi.Release{
+		ObjectMeta: meta,
+		TypeMeta:   type_,
+		Spec:       obj.Spec.ReleaseSpec,
+	}
 	return r, nil
 }
 
@@ -92,31 +98,7 @@ func (versions *ReleaseVersions) Get(key string) (*hapi.Release, error) {
 // that filter(release) == true. An error is returned if the
 // configmap fails to retrieve the releases.
 func (versions *ReleaseVersions) List(filter func(*rspb.Release) bool) ([]*rspb.Release, error) {
-	lsel := kblabels.Set{"OWNER": "TILLER"}.AsSelector()
-	opts := api.ListOptions{LabelSelector: lsel}
-
-	list, err := versions.impl.List(opts)
-	if err != nil {
-		logerrf(err, "list: failed to list")
-		return nil, err
-	}
-
 	var results []*rspb.Release
-
-	// iterate over the configmaps object list
-	// and decode each release
-	for _, item := range list.Items {
-		fmt.Println(item)
-		rls, err := decodeRelease("") //(item.Data["release"])
-		if err != nil {
-			logerrf(err, "list: failed to decode release: %v", item)
-			continue
-		}
-		if filter(rls) {
-			results = append(results, rls)
-		}
-	}
-
 	return results, nil
 }
 
@@ -127,7 +109,6 @@ func (versions *ReleaseVersions) Query(labels map[string]string) ([]*hapi.Releas
 	for k, v := range labels {
 		ls[k] = v
 	}
-
 	opts := api.ListOptions{LabelSelector: ls.AsSelector()}
 
 	list, err := versions.impl.List(opts)
@@ -135,7 +116,6 @@ func (versions *ReleaseVersions) Query(labels map[string]string) ([]*hapi.Releas
 		logerrf(err, "query: failed to query with labels")
 		return nil, err
 	}
-
 	if len(list.Items) == 0 {
 		return nil, ErrReleaseNotFound
 	}
@@ -178,10 +158,10 @@ func (version *ReleaseVersions) Create(key string, rls *hapi.Release) error {
 	return nil
 }
 
-// Update updates the releaseversion holding the release. If not found
-// the ConfigMap is created to hold the release.
+// Update updates the release_version holding the release. If not found
+// the release_version is created to hold the release.
 func (versions *ReleaseVersions) Update(key string, rls *hapi.Release) error {
-	// set labels for releaserevision object meta data
+	// set labels for release_version object meta data
 	var lbs labels
 
 	lbs.init()
@@ -193,7 +173,7 @@ func (versions *ReleaseVersions) Update(key string, rls *hapi.Release) error {
 		logerrf(err, "update: failed to encode release %q", rls.Name)
 		return err
 	}
-	// push the configmap object out into the kubiverse
+	// push the release_version object out into the kubiverse
 	_, err = versions.impl.Update(obj)
 	if err != nil {
 		logerrf(err, "update: failed to update")
@@ -202,7 +182,7 @@ func (versions *ReleaseVersions) Update(key string, rls *hapi.Release) error {
 	return nil
 }
 
-// Delete deletes the ConfigMap holding the release named by key.
+// Delete deletes the release_version holding the release named by key.
 func (versions *ReleaseVersions) Delete(key string) (rls *hapi.Release, err error) {
 	// fetch the release to check existence
 	if rls, err = versions.Get(key); err != nil {
@@ -254,59 +234,9 @@ func newReleaseVersionObject(key string, rls *hapi.Release, lbs labels) (*hapi.R
 		},
 	}
 	releaseVersion.Spec.ReleaseSpec = rls.Spec
+	releaseVersion.Status.Status = rls.Status.Status // status of release kept in release version
+	releaseVersion.Status.Deployed = rls.Status.LastDeployed
 	return releaseVersion, nil
-}
-
-func encodeRelease(rls *rspb.Release) (string, error) {
-	b, err := proto.Marshal(rls)
-	if err != nil {
-		return "", err
-	}
-	var buf bytes.Buffer
-	w, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
-	if err != nil {
-		return "", err
-	}
-	if _, err = w.Write(b); err != nil {
-		return "", err
-	}
-	w.Close()
-
-	return b64.EncodeToString(buf.Bytes()), nil
-}
-
-// decodeRelease decodes the bytes in data into a release
-// type. Data must contain a base64 encoded string of a
-// valid protobuf encoding of a release, otherwise
-// an error is returned.
-func decodeRelease(data string) (*rspb.Release, error) {
-	// base64 decode string
-	b, err := b64.DecodeString(data)
-	if err != nil {
-		return nil, err
-	}
-
-	// For backwards compatibility with releases that were stored before
-	// compression was introduced we skip decompression if the
-	// gzip magic header is not found
-	if bytes.Equal(b[0:3], magicGzip) {
-		r, err := gzip.NewReader(bytes.NewReader(b))
-		if err != nil {
-			return nil, err
-		}
-		b2, err := ioutil.ReadAll(r)
-		if err != nil {
-			return nil, err
-		}
-		b = b2
-	}
-
-	var rls rspb.Release
-	// unmarshal protobuf bytes
-	if err := proto.Unmarshal(b, &rls); err != nil {
-		return nil, err
-	}
-	return &rls, nil
 }
 
 // logerrf wraps an error with the a formatted string (used for debugging)
@@ -316,10 +246,12 @@ func logerrf(err error, format string, args ...interface{}) {
 
 func getReleaseFromReleaseVersion(rv *hapi.ReleaseVersion) (*hapi.Release, error) {
 	rs := &hapi.Release{}
+	rs.TypeMeta.Kind = "Release"
+	rs.TypeMeta.Kind = "helm.sh/v1beta1"
 	rs.Spec = rv.Spec.ReleaseSpec
 	rs.ObjectMeta = rv.ObjectMeta
 	rs.Status.Status = rv.Status.Status
-
+	rs.Status.LastDeployed = rv.Status.Deployed
 	rs.Name = GetReleaseNameFromReleaseVersion(rv.Name)
 	return rs, nil
 }

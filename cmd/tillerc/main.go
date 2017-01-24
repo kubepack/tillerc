@@ -39,8 +39,8 @@ func main() {
 		panic(err)
 	}
 	defer runtime.HandleCrash()
-
 	w := tiller.New(environment.New(), config)
 	fmt.Println("Starting tillerc...")
+	go w.RunForRollback()
 	w.RunAndHold()
 }

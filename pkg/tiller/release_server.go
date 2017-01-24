@@ -44,16 +44,18 @@ import (
 	"github.com/appscode/tillerc/pkg/storage"
 	"github.com/appscode/tillerc/pkg/storage/driver"
 	"github.com/appscode/tillerc/pkg/tiller/environment"
-	ctx "golang.org/x/net/context"
+	"k8s.io/client-go/1.4/pkg/util/json"
 	"k8s.io/helm/pkg/chartutil"
 	"k8s.io/helm/pkg/kube"
 	"k8s.io/helm/pkg/proto/hapi/chart"
+	hapi_chart "k8s.io/helm/pkg/proto/hapi/chart"
 	"k8s.io/helm/pkg/proto/hapi/release"
-	"k8s.io/helm/pkg/proto/hapi/services"
 	"k8s.io/helm/pkg/timeconv"
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	"k8s.io/kubernetes/pkg/client/typed/discovery"
+	"k8s.io/kubernetes/pkg/fields"
+	"strconv"
 )
 
 // releaseNameMaxLen is the maximum length of a release name.
@@ -103,6 +105,17 @@ type ReleaseServer struct {
 	Config     *rest.Config
 }
 
+type RollbackReq struct {
+	// dry_run, if true, will run through the release logic but no create
+	DryRun bool `protobuf:"varint,2,opt,name=dry_run,json=dryRun" json:"dry_run,omitempty"`
+	// DisableHooks causes the server to skip running any hooks for the rollback
+	DisableHooks bool `protobuf:"varint,3,opt,name=disable_hooks,json=disableHooks" json:"disable_hooks,omitempty"`
+	// Performs pods restart for resources if applicable
+	Recreate bool `protobuf:"varint,5,opt,name=recreate" json:"recreate,omitempty"`
+	// timeout specifies the max amount of time any kubernetes client command can run.
+	Timeout int64 `protobuf:"varint,6,opt,name=timeout" json:"timeout,omitempty"`
+}
+
 func New(env *environment.Environment, c *rest.Config) *ReleaseServer {
 	return &ReleaseServer{
 		env:        env,
@@ -150,7 +163,7 @@ func (s *ReleaseServer) RunAndHold() {
 			UpdateFunc: func(old, new interface{}) {
 				if !reflect.DeepEqual(old, new) {
 					glog.Infoln("got one updated event", new.(*hapi.Release))
-					s.doStuff(new.(*hapi.Release))
+					s.UpdateRelease(new.(*hapi.Release))
 				}
 			},
 		},
@@ -158,262 +171,289 @@ func (s *ReleaseServer) RunAndHold() {
 	controller.Run(wait.NeverStop)
 }
 
-func (s *ReleaseServer) doStuff(release *hapi.Release) {
-
+func (s *ReleaseServer) RunForRollback() {
+	sets := fields.Set{
+		api.EventTypeField:         api.EventTypeNormal,
+		api.EventReasonField:       "releaseRollback",
+		api.EventInvolvedKindField: "release",
+	}
+	fieldSelector := fields.SelectorFromSet(sets)
+	lw := &cache.ListWatch{
+		ListFunc: func(opts api.ListOptions) (runtime.Object, error) {
+			opts.FieldSelector = fieldSelector
+			return s.clientset.Core().Events(api.NamespaceAll).List(opts)
+		},
+		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+			options.FieldSelector = fieldSelector
+			return s.clientset.Core().Events(api.NamespaceAll).Watch(options)
+		},
+	}
+	_, controller := cache.NewInformer(lw,
+		&api.Event{},
+		s.SyncPeriod,
+		cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				glog.Infoln("got one added event for rollback", obj.(*api.Event))
+				s.RollbackRelease(obj.(*api.Event))
+			},
+		},
+	)
+	controller.Run(wait.NeverStop)
 }
 
 // UpdateRelease takes an existing release and new information, and upgrades the release.
-func (s *ReleaseServer) UpdateRelease(c ctx.Context, req *services.UpdateReleaseRequest) (*services.UpdateReleaseResponse, error) {
-	/*	currentRelease, updatedRelease, err := s.prepareUpdate(req)
-		if err != nil {
-			return nil, err
+func (s *ReleaseServer) UpdateRelease(rel *hapi.Release) error {
+	currentRelease, err := s.prepareUpdate(rel)
+	if err != nil {
+		return err
+	}
+	err = s.performUpdate(currentRelease, rel)
+	if err != nil {
+		return err
+	}
+	if !rel.Spec.DryRun {
+		if err := s.env.Releases.Create(rel); err != nil {
+			return err
 		}
-
-		res, err := s.performUpdate(currentRelease, updatedRelease, req)
-		if err != nil {
-			return res, err
-		}
-
-		if !req.DryRun {
-			if err := s.env.Releases.Create(updatedRelease); err != nil {
-				return res, err
-			}
-		}*/
-	res := &services.UpdateReleaseResponse{}
-
-	return res, nil
+	}
+	return nil
 }
 
-func (s *ReleaseServer) performUpdate(originalRelease, updatedRelease *release.Release, req *services.UpdateReleaseRequest) (*services.UpdateReleaseResponse, error) {
-	res := &services.UpdateReleaseResponse{Release: updatedRelease}
-	/*
-		if req.DryRun {
-			log.Printf("Dry run for %s", updatedRelease.Name)
-			return res, nil
-		}
+func (s *ReleaseServer) performUpdate(originalRelease, updatedRelease *hapi.Release) error {
+	updatedRelease.Status.Status = new(release.Status)
 
-		// pre-upgrade hooks
-		if !req.DisableHooks {
-			if err := s.execHook(updatedRelease.Hooks, updatedRelease.Name, updatedRelease.Namespace, preUpgrade, req.Timeout); err != nil {
-				return res, err
-			}
+	//TODO handle dry run sauman
+	/*	if req.DryRun {
+		log.Printf("Dry run for %s", updatedRelease.Name)
+		return res, nil
+	}*/
+	// pre-upgrade hooks
+	if !updatedRelease.Spec.DisableHooks {
+		if err := s.execHook(updatedRelease.Spec.Hooks, updatedRelease.Name, updatedRelease.Namespace, preUpgrade, updatedRelease.Spec.Timeout); err != nil {
+			return err
 		}
-
-		if err := s.performKubeUpdate(originalRelease, updatedRelease, req.Recreate); err != nil {
-			log.Printf("warning: Release Upgrade %q failed: %s", updatedRelease.Name, err)
-			originalRelease.Info.Status.Code = release.Status_SUPERSEDED
-			updatedRelease.Info.Status.Code = release.Status_FAILED
-			s.recordRelease(originalRelease, true)
-			s.recordRelease(updatedRelease, false)
-			return res, err
-		}
-
-		// post-upgrade hooks
-		if !req.DisableHooks {
-			if err := s.execHook(updatedRelease.Hooks, updatedRelease.Name, updatedRelease.Namespace, postUpgrade, req.Timeout); err != nil {
-				return res, err
-			}
-		}
-
-		originalRelease.Info.Status.Code = release.Status_SUPERSEDED
+	}
+	if err := s.performKubeUpdate(originalRelease, updatedRelease, updatedRelease.Spec.Recreate); err != nil {
+		log.Printf("warning: Release Upgrade %q failed: %s", updatedRelease.Name, err)
+		originalRelease.Status.Status.Code = release.Status_SUPERSEDED
+		updatedRelease.Status.Status.Code = release.Status_FAILED
 		s.recordRelease(originalRelease, true)
-
-		updatedRelease.Info.Status.Code = release.Status_DEPLOYED*/
-
-	return res, nil
+		s.recordRelease(updatedRelease, false)
+		return err
+	}
+	// post-upgrade hooks
+	if !updatedRelease.Spec.DisableHooks {
+		if err := s.execHook(updatedRelease.Spec.Hooks, updatedRelease.Name, updatedRelease.Namespace, postUpgrade, updatedRelease.Spec.Timeout); err != nil {
+			return err
+		}
+	}
+	originalRelease.Status.Status.Code = release.Status_SUPERSEDED
+	s.recordRelease(originalRelease, true)
+	updatedRelease.Status.Status.Code = release.Status_DEPLOYED
+	return nil
 }
 
 // reuseValues copies values from the current release to a new release if the new release does not have any values.
 //
 // If the request already has values, or if there are no values in the current release, this does nothing.
-func (s *ReleaseServer) reuseValues(req *services.UpdateReleaseRequest, current *release.Release) {
-	if (req.Values == nil || req.Values.Raw == "" || req.Values.Raw == "{}\n") && current.Config != nil && current.Config.Raw != "" && current.Config.Raw != "{}\n" {
-		log.Printf("Copying values from %s (v%d) to new release.", current.Name, current.Version)
-		req.Values = current.Config
+func (s *ReleaseServer) reuseValues(req *hapi.Release, current *hapi.Release) {
+	if (req.Spec.Config == nil || req.Spec.Config.Raw == "" || req.Spec.Config.Raw == "{}\n") && current.Spec.Config != nil && current.Spec.Config.Raw != "" && current.Spec.Config.Raw != "{}\n" {
+		log.Printf("Copying values from %s (v%d) to new release.", current.Name, current.Spec.Version)
+		req.Spec.Config = current.Spec.Config
 	}
 }
 
 // prepareUpdate builds an updated release for an update operation.
-func (s *ReleaseServer) prepareUpdate(req *services.UpdateReleaseRequest) (*release.Release, *release.Release, error) {
-	if !ValidName.MatchString(req.Name) {
-		return nil, nil, errMissingRelease
+func (s *ReleaseServer) prepareUpdate(rel *hapi.Release) (*hapi.Release, error) {
+	if !ValidName.MatchString(rel.Name) {
+		return nil, errMissingRelease
 	}
-
-	if req.Chart == nil {
-		return nil, nil, errMissingChart
+	if rel.Spec.Chart.Inline == nil {
+		return nil, errMissingChart
 	}
-
 	// finds the non-deleted release with the given name
-	currentRelease, err := s.env.Releases.Last(req.Name)
+	currentRelease, err := s.env.Releases.Last(rel.Name)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// If new values were not supplied in the upgrade, re-use the existing values.
-	s.reuseValues(req, currentRelease)
+	s.reuseValues(rel, currentRelease)
 
 	// Increment revision count. This is passed to templates, and also stored on
 	// the release object.
-	revision := currentRelease.Version + 1
-
+	revision := currentRelease.Spec.Version + 1
 	ts := timeconv.Now()
 	options := chartutil.ReleaseOptions{
-		Name:      req.Name,
+		Name:      rel.Name,
 		Time:      ts,
 		Namespace: currentRelease.Namespace,
 		IsUpgrade: true,
 		Revision:  int(revision),
 	}
 
-	valuesToRender, err := chartutil.ToRenderValues(req.Chart, req.Values, options)
+	if rel.Spec.Config == nil {
+		rel.Spec.Config = &hapi_chart.Config{}
+	}
+	valuesToRender, err := chartutil.ToRenderValues(rel.Spec.Chart.Inline, rel.Spec.Config, options)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	hooks, manifestDoc, notesTxt, err := s.renderResources(req.Chart, valuesToRender)
+	hooks, manifestDoc, notesTxt, err := s.renderResources(rel.Spec.Chart.Inline, valuesToRender)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-
-	// Store an updated release.
-	updatedRelease := &release.Release{
-		Name:      req.Name,
-		Namespace: currentRelease.Namespace,
-		Chart:     req.Chart,
-		Config:    req.Values,
-		Info: &release.Info{
-			FirstDeployed: currentRelease.Info.FirstDeployed,
-			LastDeployed:  ts,
-			Status:        &release.Status{Code: release.Status_UNKNOWN},
-		},
-		Version:  revision,
-		Manifest: manifestDoc.String(),
-		Hooks:    hooks,
-	}
-
+	//rel is the updated release
+	rel.Spec.Hooks = hooks
+	rel.Spec.Version = revision
+	rel.Spec.Manifest = manifestDoc.String()
+	rel.Status.FirstDeployed = currentRelease.Status.FirstDeployed
+	rel.Status.LastDeployed = unversioned.Now()
 	if len(notesTxt) > 0 {
-		updatedRelease.Info.Status.Notes = notesTxt
+		rel.Status.Status.Notes = notesTxt
 	}
 	err = validateManifest(s.env.KubeClient, currentRelease.Namespace, manifestDoc.Bytes())
-	return currentRelease, updatedRelease, err
+	return currentRelease, err
 }
 
 // RollbackRelease rolls back to a previous version of the given release.
-func (s *ReleaseServer) RollbackRelease(c ctx.Context, req *services.RollbackReleaseRequest) (*services.RollbackReleaseResponse, error) {
-	/*	currentRelease, targetRelease, err := s.prepareRollback(req)
-		if err != nil {
-			return nil, err
-		}
+func (s *ReleaseServer) RollbackRelease(e *api.Event) error {
+	rollbackReq := &RollbackReq{}
+	err := json.Unmarshal([]byte(e.Message), rollbackReq)
+	if err != nil {
+		return err
+	}
+	currentRelease, targetRelease, err := s.prepareRollback(e)
+	if err != nil {
+		return err
+	}
+	targetRelease.Spec.DryRun = rollbackReq.DryRun
+	targetRelease.Spec.DisableHooks = rollbackReq.DisableHooks
+	targetRelease.Spec.Timeout = rollbackReq.Timeout
+	if err != nil {
+		return err
+	}
 
-		res, err := s.performRollback(currentRelease, targetRelease, req)
-		if err != nil {
-			return res, err
-		}
-
-		if !req.DryRun {
+	err = s.performRollback(currentRelease, targetRelease, e)
+	if err != nil {
+		return err
+	}
+	/*	fmt.Println(targetRelease)
+		if !rollbackReq.DryRun {
 			if err := s.env.Releases.Create(targetRelease); err != nil {
-				return res, err
+				return err
 			}
 		}*/
-	res := &services.RollbackReleaseResponse{}
-
-	return res, nil
+	return nil
 }
 
-func (s *ReleaseServer) performRollback(currentRelease, targetRelease *release.Release, req *services.RollbackReleaseRequest) (*services.RollbackReleaseResponse, error) {
-	res := &services.RollbackReleaseResponse{Release: targetRelease}
-	/*
-		if req.DryRun {
-			log.Printf("Dry run for %s", targetRelease.Name)
-			return res, nil
-		}
+func (s *ReleaseServer) performRollback(currentRelease, targetRelease *hapi.Release, e *api.Event) error {
+	rollbackReq := &RollbackReq{}
+	err := json.Unmarshal([]byte(e.Message), rollbackReq)
+	if err != nil {
+		return err
+	}
 
-		// pre-rollback hooks
-		if !req.DisableHooks {
-			if err := s.execHook(targetRelease.Hooks, targetRelease.Name, targetRelease.Namespace, preRollback, req.Timeout); err != nil {
-				return res, err
-			}
+	// pre-rollback hooks
+	/*	if !rollbackReq.DisableHooks {
+		if err := s.execHook(targetRelease.Spec.Hooks, targetRelease.Name, targetRelease.Namespace, preRollback, rollbackReq.Timeout); err != nil {
+			return err
 		}
-
-		if err := s.performKubeUpdate(currentRelease, targetRelease, req.Recreate); err != nil {
-			log.Printf("warning: Release Rollback %q failed: %s", targetRelease.Name, err)
-			currentRelease.Info.Status.Code = release.Status_SUPERSEDED
-			targetRelease.Info.Status.Code = release.Status_FAILED
-			s.recordRelease(currentRelease, true)
-			s.recordRelease(targetRelease, false)
-			return res, err
-		}
-
-		// post-rollback hooks
-		if !req.DisableHooks {
-			if err := s.execHook(targetRelease.Hooks, targetRelease.Name, targetRelease.Namespace, postRollback, req.Timeout); err != nil {
-				return res, err
-			}
-		}
-
-		currentRelease.Info.Status.Code = release.Status_SUPERSEDED
+	}*/
+	if err := s.performKubeUpdateForRollback(currentRelease, targetRelease, rollbackReq.Recreate); err != nil {
+		log.Printf("warning: Release Rollback %q failed: %s", targetRelease.Name, err)
+		return err
+	}
+	/*	if err := s.performKubeUpdate(currentRelease, targetRelease, rollbackReq.Recreate); err != nil {
+		log.Printf("warning: Release Rollback %q failed: %s", targetRelease.Name, err)
+		currentRelease.Status.Status.Code = release.Status_SUPERSEDED
+		targetRelease.Status.Status.Code = release.Status_FAILED
 		s.recordRelease(currentRelease, true)
-
-		targetRelease.Info.Status.Code = release.Status_DEPLOYED*/
-
-	return res, nil
+		s.recordRelease(targetRelease, false)
+		return err
+	}*/
+	// post-rollback hooks
+	/*if rollbackReq.DisableHooks {
+		if err := s.execHook(targetRelease.Spec.Hooks, targetRelease.Name, targetRelease.Namespace, postRollback, rollbackReq.Timeout); err != nil {
+			return err
+		}
+	}
+	currentRelease.Status.Status.Code = release.Status_SUPERSEDED
+	s.recordRelease(currentRelease, true)
+	// TODO handle release part
+	targetRelease.Status = tc_api.ReleaseStatus{}
+	targetRelease.Status.Status = new(release.Status)
+	targetRelease.Status.Status.Code = release.Status_DEPLOYED*/
+	return nil
 }
 
-func (s *ReleaseServer) performKubeUpdate(currentRelease, targetRelease *release.Release, recreate bool) error {
+func (s *ReleaseServer) performKubeUpdateForRollback(currentRelease, targetRelease *hapi.Release, recreate bool) error {
+	crntReleaseFromKube, err := s.Client.Release(targetRelease.Namespace).Get(targetRelease.Name)
+	if err != nil {
+		return err
+	}
+	targetRelease.TypeMeta = crntReleaseFromKube.TypeMeta
+	targetRelease.ObjectMeta = crntReleaseFromKube.ObjectMeta
+	_, err = s.Client.Release(targetRelease.Namespace).Update(targetRelease)
+	return err
+}
+
+func (s *ReleaseServer) performKubeUpdate(currentRelease, targetRelease *hapi.Release, recreate bool) error {
 	kubeCli := s.env.KubeClient
-	current := bytes.NewBufferString(currentRelease.Manifest)
-	target := bytes.NewBufferString(targetRelease.Manifest)
+	current := bytes.NewBufferString(currentRelease.Spec.Manifest)
+	target := bytes.NewBufferString(targetRelease.Spec.Manifest)
 	return kubeCli.Update(targetRelease.Namespace, current, target, recreate)
 }
 
 // prepareRollback finds the previous release and prepares a new release object with
 //  the previous release's configuration
-func (s *ReleaseServer) prepareRollback(req *services.RollbackReleaseRequest) (*release.Release, *release.Release, error) {
-	/*switch {
-	case !ValidName.MatchString(req.Name):
+func (s *ReleaseServer) prepareRollback(e *api.Event) (*hapi.Release, *hapi.Release, error) {
+	r := strings.SplitN(e.InvolvedObject.Name, "-", 2)
+	var version int32
+	version = int32(0)
+	var err error
+	releaseName := r[0]
+	if len(r) == 2 {
+		val, err := strconv.Atoi(strings.TrimPrefix(r[1], "v"))
+		if err != nil {
+			return nil, nil, errors.New("Version not found")
+		}
+		version = int32(val)
+	}
+	switch {
+	case !ValidName.MatchString(releaseName):
 		return nil, nil, errMissingRelease
-	case req.Version < 0:
+	case version < 0:
 		return nil, nil, errInvalidRevision
 	}
+	crls, err := s.env.Releases.Last(releaseName)
+	if err != nil {
+		log.Print(err)
+		return nil, nil, err
+	}
+	rbv := version
+	if version == 0 {
+		rbv = crls.Spec.Version - 1
+	}
+	log.Printf("rolling back %s (current: v%d, target: v%d)", releaseName, crls.Spec.Version, rbv)
 
-	crls, err := s.env.Releases.Last(req.Name)
+	prls, err := s.env.Releases.Get(releaseName, rbv)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	rbv := req.Version
-	if req.Version == 0 {
-		rbv = crls.Version - 1
-	}
-
-	log.Printf("rolling back %s (current: v%d, target: v%d)", req.Name, crls.Version, rbv)
-
-	prls, err := s.env.Releases.Get(req.Name, rbv)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Store a new release object with previous release's configuration
-	target := &release.Release{
-		Name:      req.Name,
-		Namespace: crls.Namespace,
-		Chart:     prls.Chart,
-		Config:    prls.Config,
-		Info: &release.Info{
-			FirstDeployed: crls.Info.FirstDeployed,
-			LastDeployed:  timeconv.Now(),
-			Status: &release.Status{
-				Code:  release.Status_UNKNOWN,
-				Notes: prls.Info.Status.Notes,
-			},
+	target := &hapi.Release{
+		ObjectMeta: prls.ObjectMeta,
+		TypeMeta:   prls.TypeMeta,
+		Spec: tc_api.ReleaseSpec{
+			Chart:    prls.Spec.Chart,
+			Config:   prls.Spec.Config,
+			Version:  crls.Spec.Version + 1,
+			Manifest: prls.Spec.Manifest,
+			Hooks:    prls.Spec.Hooks,
 		},
-		Version:  crls.Version + 1,
-		Manifest: prls.Manifest,
-		Hooks:    prls.Hooks,
 	}
-	*/
-	crls := &release.Release{}
-	target := &release.Release{}
+	target.Status = crls.Status
 	return crls, target, nil
 }
 
@@ -434,9 +474,6 @@ func (s *ReleaseServer) InstallRelease(rel *hapi.Release) error {
 	err := s.prepareRelease(rel)
 	if err != nil {
 		log.Printf("Failed install prepare step: %s", err)
-		//res := &services.InstallReleaseResponse{Release: rel}
-		//res := &services.InstallReleaseResponse{}
-
 		// On dry run, append the manifest contents to a failed release. This is
 		// a stop-gap until we can revisit an error backchannel post-2.0.
 		//TODO check later
@@ -473,34 +510,16 @@ func (s *ReleaseServer) prepareRelease(rel *hapi.Release) error {
 		Revision:  revision,
 		IsInstall: true,
 	}
-
-	valuesToRender, err := chartutil.ToRenderValues(rel.Spec.Chart.Inline, rel.Spec.Chart.Inline.Values, options) //TODO check rel.Spec.Config
-
+	if rel.Spec.Config == nil {
+		rel.Spec.Config = &hapi_chart.Config{}
+	}
+	valuesToRender, err := chartutil.ToRenderValues(rel.Spec.Chart.Inline, rel.Spec.Config, options)
 	if err != nil {
 
 		return err
 	}
-
 	hooks, manifestDoc, _, err := s.renderResources(rel.Spec.Chart.Inline, valuesToRender) // noteTxt
 	if err != nil {
-		// Return a release with partial data so that client can show debugging
-		// information.
-		/*rel := &release.Release{
-			Name:      req.Name,
-			Namespace: req.Namespace,
-			Chart:     req.Chart,
-			Config:    req.Values,
-			Info: &release.Info{
-				FirstDeployed: ts,
-				LastDeployed:  ts,
-				Status:        &release.Status{Code: release.Status_UNKNOWN},
-			},
-			Version: 0,
-		}
-		if manifestDoc != nil {
-			rel.Manifest = manifestDoc.String()
-		}
-		return rel, err*/
 		return err
 	}
 
@@ -614,14 +633,13 @@ func (s *ReleaseServer) recordRelease(r *hapi.Release, reuse bool) {
 // performRelease runs a release.
 func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 	//res := &services.InstallReleaseResponse{Release: r}
-	rel.Status = tc_api.ReleaseStatus{}
+	//rel.Status = tc_api.ReleaseStatus{}
 	rel.Status.Status = new(release.Status)
 
-	//TODO check DryRun later
-	/*	if req.DryRun {
-		log.Printf("Dry run for %s", r.Name)
-		return res, nil
-	}*/
+	if rel.Spec.DryRun {
+		log.Printf("Dry run for %s", rel.Name)
+		return nil
+	}
 
 	// pre-install hooks
 	if !rel.Spec.DisableHooks {
@@ -677,7 +695,7 @@ func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 		if err := s.execHook(rel.Spec.Hooks, rel.Name, rel.ObjectMeta.Namespace, postInstall, rel.Spec.Timeout); err != nil {
 			log.Printf("warning: Release %q failed post-install: %s", rel.Name, err)
 			rel.Status.Status.Code = release.Status_FAILED
-			//s.recordRelease(r, false)  TODO handle record part
+			s.recordRelease(rel, false)
 			return err
 		}
 	}
@@ -690,6 +708,7 @@ func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 	// One possible strategy would be to do a timed retry to see if we can get
 	// this stored in the future.
 	rel.Status.Status.Code = release.Status_DEPLOYED
+
 	s.recordRelease(rel, false)
 
 	return nil

@@ -63,6 +63,9 @@ type ReleaseSpec struct {
 	Timeout int64 `protobuf:"varint,7,opt,name=timeout" json:"timeout,omitempty"`
 
 	Purge bool `protobuf:"varint,3,opt,name=purge" json:"purge,omitempty"`
+
+	// dry_run, if true, will run through the release logic, but neither create
+	DryRun bool `protobuf:"varint,4,opt,name=dry_run,json=dryRun" json:"dry_run,omitempty"`
 }
 
 type ReleaseStatus struct {
@@ -99,7 +102,7 @@ type ReleaseVersionSpec struct {
 
 type ReleaseVersionStatus struct {
 	Status   *hapi_release.Status `protobuf:"bytes,1,opt,name=status" json:"status,omitempty"`
-	Deployed unversioned.Time     `protobuf:"bytes,2,opt,name=first_deployed,json=firstDeployed" json:"first_deployed,omitempty"`
+	Deployed unversioned.Time     `protobuf:"bytes,2,opt,name=deployed" json:"deployed,omitempty"`
 }
 
 type ReleaseVersionList struct {
