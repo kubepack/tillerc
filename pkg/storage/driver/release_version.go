@@ -17,17 +17,13 @@ limitations under the License.
 package driver
 
 import (
-	"bytes"
-	"compress/gzip"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"strconv"
 	"time"
 
 	"github.com/appscode/tillerc/client/clientset"
-	"github.com/golang/protobuf/proto"
 	"k8s.io/kubernetes/pkg/api"
 	kberrs "k8s.io/kubernetes/pkg/api/errors"
 
@@ -102,31 +98,7 @@ func (versions *ReleaseVersions) Get(key string) (*hapi.Release, error) {
 // that filter(release) == true. An error is returned if the
 // configmap fails to retrieve the releases.
 func (versions *ReleaseVersions) List(filter func(*rspb.Release) bool) ([]*rspb.Release, error) {
-	lsel := kblabels.Set{"OWNER": "TILLER"}.AsSelector()
-	opts := api.ListOptions{LabelSelector: lsel}
-
-	list, err := versions.impl.List(opts)
-	if err != nil {
-		logerrf(err, "list: failed to list")
-		return nil, err
-	}
-
 	var results []*rspb.Release
-
-	// iterate over the configmaps object list
-	// and decode each release
-	for _, item := range list.Items {
-		fmt.Println(item)
-		rls, err := decodeRelease("") //(item.Data["release"])
-		if err != nil {
-			logerrf(err, "list: failed to decode release: %v", item)
-			continue
-		}
-		if filter(rls) {
-			results = append(results, rls)
-		}
-	}
-
 	return results, nil
 }
 
@@ -263,41 +235,8 @@ func newReleaseVersionObject(key string, rls *hapi.Release, lbs labels) (*hapi.R
 	}
 	releaseVersion.Spec.ReleaseSpec = rls.Spec
 	releaseVersion.Status.Status = rls.Status.Status // status of release kept in release version
+	releaseVersion.Status.Deployed = rls.Status.LastDeployed
 	return releaseVersion, nil
-}
-
-// decodeRelease decodes the bytes in data into a release
-// type. Data must contain a base64 encoded string of a
-// valid protobuf encoding of a release, otherwise
-// an error is returned.
-func decodeRelease(data string) (*rspb.Release, error) {
-	// base64 decode string
-	b, err := b64.DecodeString(data)
-	if err != nil {
-		return nil, err
-	}
-
-	// For backwards compatibility with releases that were stored before
-	// compression was introduced we skip decompression if the
-	// gzip magic header is not found
-	if bytes.Equal(b[0:3], magicGzip) {
-		r, err := gzip.NewReader(bytes.NewReader(b))
-		if err != nil {
-			return nil, err
-		}
-		b2, err := ioutil.ReadAll(r)
-		if err != nil {
-			return nil, err
-		}
-		b = b2
-	}
-
-	var rls rspb.Release
-	// unmarshal protobuf bytes
-	if err := proto.Unmarshal(b, &rls); err != nil {
-		return nil, err
-	}
-	return &rls, nil
 }
 
 // logerrf wraps an error with the a formatted string (used for debugging)
@@ -307,10 +246,12 @@ func logerrf(err error, format string, args ...interface{}) {
 
 func getReleaseFromReleaseVersion(rv *hapi.ReleaseVersion) (*hapi.Release, error) {
 	rs := &hapi.Release{}
+	rs.TypeMeta.Kind = "Release"
+	rs.TypeMeta.Kind = "helm.sh/v1beta1"
 	rs.Spec = rv.Spec.ReleaseSpec
 	rs.ObjectMeta = rv.ObjectMeta
 	rs.Status.Status = rv.Status.Status
-
+	rs.Status.LastDeployed = rv.Status.Deployed
 	rs.Name = GetReleaseNameFromReleaseVersion(rv.Name)
 	return rs, nil
 }

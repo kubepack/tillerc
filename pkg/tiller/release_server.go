@@ -217,7 +217,6 @@ func (s *ReleaseServer) UpdateRelease(rel *hapi.Release) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(currentRelease.Status)
 	err = s.performUpdate(currentRelease, rel)
 	if err != nil {
 		return err
@@ -231,10 +230,7 @@ func (s *ReleaseServer) UpdateRelease(rel *hapi.Release) error {
 }
 
 func (s *ReleaseServer) performUpdate(originalRelease, updatedRelease *hapi.Release) error {
-	updatedRelease.Status = tc_api.ReleaseStatus{}
 	updatedRelease.Status.Status = new(release.Status)
-	/*	originalRelease.Status = tc_api.ReleaseStatus{}
-		originalRelease.Status.Status = new(release.Status)*/
 
 	//TODO handle dry run sauman
 	/*	if req.DryRun {
@@ -306,6 +302,9 @@ func (s *ReleaseServer) prepareUpdate(rel *hapi.Release) (*hapi.Release, error) 
 		Revision:  int(revision),
 	}
 
+	if rel.Spec.Config == nil {
+		rel.Spec.Config = &hapi_chart.Config{}
+	}
 	valuesToRender, err := chartutil.ToRenderValues(rel.Spec.Chart.Inline, rel.Spec.Config, options)
 	if err != nil {
 		return nil, err
@@ -315,27 +314,12 @@ func (s *ReleaseServer) prepareUpdate(rel *hapi.Release) (*hapi.Release, error) 
 	if err != nil {
 		return nil, err
 	}
-
-	// Store an updated release.
-	/*	updatedRelease := &release.Release{
-		Name:      rel.Name,
-		Namespace: currentRelease.Namespace,
-		Chart:     rel.Spec.Chart,
-		Config:    rel.Spec.Config,
-		Info: &release.Info{
-			FirstDeployed: currentRelease.Info.FirstDeployed,
-			LastDeployed:  ts,
-			Status:        &release.Status{Code: release.Status_UNKNOWN},
-		},
-		Version:  revision,
-		Manifest: manifestDoc.String(),
-		Hooks:    hooks,
-	}*/
 	//rel is the updated release
 	rel.Spec.Hooks = hooks
 	rel.Spec.Version = revision
 	rel.Spec.Manifest = manifestDoc.String()
-
+	rel.Status.FirstDeployed = currentRelease.Status.FirstDeployed
+	rel.Status.LastDeployed = unversioned.Now()
 	if len(notesTxt) > 0 {
 		rel.Status.Status.Notes = notesTxt
 	}
@@ -659,14 +643,13 @@ func (s *ReleaseServer) recordRelease(r *hapi.Release, reuse bool) {
 // performRelease runs a release.
 func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 	//res := &services.InstallReleaseResponse{Release: r}
-	rel.Status = tc_api.ReleaseStatus{}
+	//rel.Status = tc_api.ReleaseStatus{}
 	rel.Status.Status = new(release.Status)
 
-	//TODO check DryRun later
-	/*	if req.DryRun {
-		log.Printf("Dry run for %s", r.Name)
-		return res, nil
-	}*/
+	if rel.Spec.DryRun {
+		log.Printf("Dry run for %s", rel.Name)
+		return nil
+	}
 
 	// pre-install hooks
 	if !rel.Spec.DisableHooks {
@@ -735,6 +718,7 @@ func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 	// One possible strategy would be to do a timed retry to see if we can get
 	// this stored in the future.
 	rel.Status.Status.Code = release.Status_DEPLOYED
+
 	s.recordRelease(rel, false)
 
 	return nil

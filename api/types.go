@@ -102,7 +102,7 @@ type ReleaseVersionSpec struct {
 
 type ReleaseVersionStatus struct {
 	Status   *hapi_release.Status `protobuf:"bytes,1,opt,name=status" json:"status,omitempty"`
-	Deployed unversioned.Time     `protobuf:"bytes,2,opt,name=first_deployed,json=firstDeployed" json:"first_deployed,omitempty"`
+	Deployed unversioned.Time     `protobuf:"bytes,2,opt,name=deployed" json:"deployed,omitempty"`
 }
 
 type ReleaseVersionList struct {
