@@ -234,8 +234,8 @@ func newReleaseVersionObject(key string, rls *hapi.Release, lbs labels) (*hapi.R
 		},
 	}
 	releaseVersion.Spec.ReleaseSpec = rls.Spec
-	releaseVersion.Status.Status = rls.Status.Status // status of release kept in release version
-	releaseVersion.Status.Deployed = rls.Status.LastDeployed
+	releaseVersion.Status = rls.Status // status of release kept in release version
+	//releaseVersion.Status.Deployed = rls.Status.LastDeployed
 	return releaseVersion, nil
 }
 
@@ -250,8 +250,8 @@ func getReleaseFromReleaseVersion(rv *hapi.ReleaseVersion) (*hapi.Release, error
 	rs.TypeMeta.Kind = "helm.sh/v1beta1"
 	rs.Spec = rv.Spec.ReleaseSpec
 	rs.ObjectMeta = rv.ObjectMeta
-	rs.Status.Status = rv.Status.Status
-	rs.Status.LastDeployed = rv.Status.Deployed
+	rs.Status = rv.Status
+	//rs.Status.LastDeployed = rv.Status.Deployed
 	rs.Name = GetReleaseNameFromReleaseVersion(rv.Name)
 	return rs, nil
 }
