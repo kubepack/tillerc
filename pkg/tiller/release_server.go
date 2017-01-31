@@ -310,6 +310,7 @@ func (s *ReleaseServer) prepareUpdate(rel *hapi.Release) (*hapi.Release, error) 
 	rel.Spec.Manifest = manifestDoc.String()
 	rel.Status.FirstDeployed = currentRelease.Status.FirstDeployed
 	rel.Status.LastDeployed = unversioned.Now()
+	rel.Status.Status = new(release.Status)
 	if len(notesTxt) > 0 {
 		rel.Status.Status.Notes = notesTxt
 	}
