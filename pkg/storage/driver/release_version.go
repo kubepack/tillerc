@@ -77,10 +77,10 @@ func (versions *ReleaseVersions) Get(key string) (*hapi.Release, error) {
 
 	// return the release object
 	// TODO sauman add more info
-	s := strings.SplitN(obj.Name, "-", 2)
+	s := GetReleaseNameFromReleaseVersion(obj.Name)
 	meta := api.ObjectMeta{
 		Namespace: obj.Namespace,
-		Name:      s[0],
+		Name:      s,
 	}
 	type_ := unversioned.TypeMeta{
 		Kind:       "Release",
@@ -241,7 +241,7 @@ func newReleaseVersionObject(key string, rls *hapi.Release, lbs labels) (*hapi.R
 
 // logerrf wraps an error with the a formatted string (used for debugging)
 func logerrf(err error, format string, args ...interface{}) {
-	log.Printf("configmaps: %s: %s\n", fmt.Sprintf(format, args...), err)
+	log.Printf("releaseversions: %s: %s\n", fmt.Sprintf(format, args...), err)
 }
 
 func getReleaseFromReleaseVersion(rv *hapi.ReleaseVersion) (*hapi.Release, error) {
@@ -258,5 +258,7 @@ func getReleaseFromReleaseVersion(rv *hapi.ReleaseVersion) (*hapi.Release, error
 
 func GetReleaseNameFromReleaseVersion(name string) string {
 	releaseName := strings.Split(name, "-")
-	return releaseName[0]
+	releaseName = releaseName[0 : len(releaseName)-1]
+	result := strings.Join(releaseName, "-")
+	return result
 }

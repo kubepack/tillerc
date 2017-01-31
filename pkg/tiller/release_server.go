@@ -335,7 +335,6 @@ func (s *ReleaseServer) RollbackRelease(e *api.Event) error {
 	if err != nil {
 		return err
 	}
-
 	err = s.performRollback(currentRelease, targetRelease, e)
 	if err != nil {
 		return err
@@ -410,18 +409,13 @@ func (s *ReleaseServer) performKubeUpdate(currentRelease, targetRelease *hapi.Re
 // prepareRollback finds the previous release and prepares a new release object with
 //  the previous release's configuration
 func (s *ReleaseServer) prepareRollback(e *api.Event) (*hapi.Release, *hapi.Release, error) {
-	r := strings.SplitN(e.InvolvedObject.Name, "-", 2)
+	r := strings.Split(e.InvolvedObject.Name, "-")
 	var version int32
 	version = int32(0)
 	var err error
-	releaseName := r[0]
-	if len(r) == 2 {
-		val, err := strconv.Atoi(strings.TrimPrefix(r[1], "v"))
-		if err != nil {
-			return nil, nil, errors.New("Version not found")
-		}
-		version = int32(val)
-	}
+	releaseName := driver.GetReleaseNameFromReleaseVersion(e.InvolvedObject.Name)
+	val, err := strconv.Atoi(strings.TrimPrefix(r[len(r)-1], "v"))
+	version = int32(val)
 	switch {
 	case !ValidName.MatchString(releaseName):
 		return nil, nil, errMissingRelease
