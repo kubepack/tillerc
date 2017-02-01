@@ -448,7 +448,7 @@ func (s *ReleaseServer) prepareRollback(e *api.Event) (*hapi.Release, *hapi.Rele
 			Hooks:    prls.Spec.Hooks,
 		},
 	}
-	target.Status = crls.Status
+	//target.Status = crls.Status
 	return crls, target, nil
 }
 
