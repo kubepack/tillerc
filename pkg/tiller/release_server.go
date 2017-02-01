@@ -222,11 +222,10 @@ func (s *ReleaseServer) UpdateRelease(rel *hapi.Release) error {
 func (s *ReleaseServer) performUpdate(originalRelease, updatedRelease *hapi.Release) error {
 	updatedRelease.Status.Status = new(release.Status)
 
-	//TODO handle dry run sauman
-	/*	if req.DryRun {
-		log.Printf("Dry run for %s", updatedRelease.Name)
-		return res, nil
-	}*/
+			if updatedRelease.Spec.DryRun {
+			log.Printf("Dry run for %s", updatedRelease.Name)
+			return nil
+		}
 	// pre-upgrade hooks
 	if !updatedRelease.Spec.DisableHooks {
 		if err := s.execHook(updatedRelease.Spec.Hooks, updatedRelease.Name, updatedRelease.Namespace, preUpgrade, updatedRelease.Spec.Timeout); err != nil {
@@ -235,6 +234,7 @@ func (s *ReleaseServer) performUpdate(originalRelease, updatedRelease *hapi.Rele
 	}
 	if err := s.performKubeUpdate(originalRelease, updatedRelease, updatedRelease.Spec.Recreate); err != nil {
 		log.Printf("warning: Release Upgrade %q failed: %s", updatedRelease.Name, err)
+		s.setResource(updatedRelease)
 		originalRelease.Status.Status.Code = release.Status_SUPERSEDED
 		updatedRelease.Status.Status.Code = release.Status_FAILED
 		s.recordRelease(originalRelease, true)
@@ -247,6 +247,7 @@ func (s *ReleaseServer) performUpdate(originalRelease, updatedRelease *hapi.Rele
 			return err
 		}
 	}
+	s.setResource(updatedRelease)
 	originalRelease.Status.Status.Code = release.Status_SUPERSEDED
 	s.recordRelease(originalRelease, true)
 	updatedRelease.Status.Status.Code = release.Status_DEPLOYED
@@ -339,12 +340,11 @@ func (s *ReleaseServer) RollbackRelease(e *api.Event) error {
 	if err != nil {
 		return err
 	}
-	/*	fmt.Println(targetRelease)
-		if !rollbackReq.DryRun {
-			if err := s.env.Releases.Create(targetRelease); err != nil {
-				return err
-			}
-		}*/
+	/*if !rollbackReq.DryRun {
+		if err := s.env.Releases.Create(targetRelease); err != nil {
+			return err
+		}
+	}*/
 	return nil
 }
 
@@ -472,9 +472,9 @@ func (s *ReleaseServer) InstallRelease(rel *hapi.Release) error {
 		// On dry run, append the manifest contents to a failed release. This is
 		// a stop-gap until we can revisit an error backchannel post-2.0.
 		//TODO check later
-		/*		if req.DryRun && strings.HasPrefix(err.Error(), "YAML parse error") {
-				err = fmt.Errorf("%s\n%s", err, rel.Manifest)
-			}*/
+				if rel.Spec.DryRun && strings.HasPrefix(err.Error(), "YAML parse error") {
+				err = fmt.Errorf("%s\n%s", err, rel.Spec.Manifest)
+			}
 		return err
 	}
 	err = s.performRelease(rel)
@@ -674,15 +674,18 @@ func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 	default:
 		// nothing to replace, create as normal
 		// regular manifests
+
 		b := bytes.NewBufferString(rel.Spec.Manifest)
 		//os.Exit(1)
 		if err := s.env.KubeClient.Create(rel.Namespace, b); err != nil {
 			log.Printf("warning: Release %q failed: %s", rel.Name, err)
 			rel.Status.Status.Code = release.Status_FAILED
+			s.setResource(rel)
 			// record release in a release version ...
 			s.recordRelease(rel, false)
 			return fmt.Errorf("release %s failed: %s", rel.Name, err)
 		}
+		s.setResource(rel)
 	}
 
 	// post-install hooks
@@ -707,6 +710,16 @@ func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 	s.recordRelease(rel, false)
 
 	return nil
+}
+
+func (s *ReleaseServer) setResource(rel *hapi.Release) {
+	b := bytes.NewBufferString(rel.Spec.Manifest)
+	resp, err := s.env.KubeClient.Get(rel.Namespace, b)
+	if err != nil {
+		log.Println("ERROR Resource not set")
+	} else {
+		rel.Status.Status.Resources = resp
+	}
 }
 
 func (s *ReleaseServer) execHook(hs []*release.Hook, name, namespace, hook string, timeout int64) error {
