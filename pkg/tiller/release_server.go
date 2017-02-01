@@ -222,10 +222,10 @@ func (s *ReleaseServer) UpdateRelease(rel *hapi.Release) error {
 func (s *ReleaseServer) performUpdate(originalRelease, updatedRelease *hapi.Release) error {
 	updatedRelease.Status.Status = new(release.Status)
 
-			if updatedRelease.Spec.DryRun {
-			log.Printf("Dry run for %s", updatedRelease.Name)
-			return nil
-		}
+	if updatedRelease.Spec.DryRun {
+		log.Printf("Dry run for %s", updatedRelease.Name)
+		return nil
+	}
 	// pre-upgrade hooks
 	if !updatedRelease.Spec.DisableHooks {
 		if err := s.execHook(updatedRelease.Spec.Hooks, updatedRelease.Name, updatedRelease.Namespace, preUpgrade, updatedRelease.Spec.Timeout); err != nil {
@@ -472,9 +472,9 @@ func (s *ReleaseServer) InstallRelease(rel *hapi.Release) error {
 		// On dry run, append the manifest contents to a failed release. This is
 		// a stop-gap until we can revisit an error backchannel post-2.0.
 		//TODO check later
-				if rel.Spec.DryRun && strings.HasPrefix(err.Error(), "YAML parse error") {
-				err = fmt.Errorf("%s\n%s", err, rel.Spec.Manifest)
-			}
+		if rel.Spec.DryRun && strings.HasPrefix(err.Error(), "YAML parse error") {
+			err = fmt.Errorf("%s\n%s", err, rel.Spec.Manifest)
+		}
 		return err
 	}
 	err = s.performRelease(rel)
