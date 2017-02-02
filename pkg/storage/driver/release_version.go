@@ -222,7 +222,7 @@ func newReleaseVersionObject(key string, rls *hapi.Release, lbs labels) (*hapi.R
 	// apply labels
 	lbs.set("NAME", rls.Name)
 	lbs.set("OWNER", owner)
-	lbs.set("STATUS", rspb.Status_Code_name[int32(rls.Status.LastDeploymentStatus.Code)])
+	lbs.set("STATUS", rspb.Status_Code_name[int32(rls.Status.Code)])
 	lbs.set("VERSION", strconv.Itoa(int(rls.Spec.Version)))
 	//create and return release version object
 	//  TODO Handle first release and last release
@@ -234,7 +234,9 @@ func newReleaseVersionObject(key string, rls *hapi.Release, lbs labels) (*hapi.R
 		},
 	}
 	releaseVersion.Spec.ReleaseSpec = rls.Spec
-	releaseVersion.Status.Status = rls.Status.LastDeploymentStatus // status of release kept in release version
+	releaseVersion.Status.Code = rls.Status.Code // status of release kept in release version
+	releaseVersion.Status.Details = rls.Status.Details
+	releaseVersion.Status.Notes = rls.Status.Notes
 	releaseVersion.Status.Version = rls.Status.LastDeployedVersion
 	releaseVersion.Status.Deployed = rls.Status.LastDeployed
 	//releaseVersion.Status.Deployed = rls.Status.LastDeployed
@@ -252,8 +254,10 @@ func getReleaseFromReleaseVersion(rv *hapi.ReleaseVersion) (*hapi.Release, error
 	rs.TypeMeta.Kind = "helm.sh/v1beta1"
 	rs.Spec = rv.Spec.ReleaseSpec
 	rs.ObjectMeta = rv.ObjectMeta
-	rs.Status.LastDeploymentStatus = new(rspb.Status)
-	rs.Status.LastDeploymentStatus = rv.Status.Status
+	//rs.Status.LastDeploymentStatus = new(rspb.Status)
+	rs.Status.Code = rv.Status.Code
+	rs.Status.Notes = rv.Status.Notes
+	rs.Status.Details = rv.Status.Details
 	rs.Status.LastDeployedVersion = rv.Status.Version
 	rs.Status.LastDeployed = rv.Status.Deployed
 	rs.Name = GetReleaseNameFromReleaseVersion(rv.Name)

@@ -232,7 +232,7 @@ func (s *ReleaseServer) UpdateRelease(rel *hapi.Release) error {
 }
 
 func (s *ReleaseServer) performUpdate(originalRelease, updatedRelease *hapi.Release) error {
-	updatedRelease.Status.LastDeploymentStatus = new(release.Status)
+	//updatedRelease.Status.LastDeploymentStatus = new(release.Status)
 
 	if updatedRelease.Spec.DryRun {
 		log.Printf("Dry run for %s", updatedRelease.Name)
@@ -247,8 +247,8 @@ func (s *ReleaseServer) performUpdate(originalRelease, updatedRelease *hapi.Rele
 	if err := s.performKubeUpdate(originalRelease, updatedRelease, updatedRelease.Spec.Recreate); err != nil {
 		log.Printf("warning: Release Upgrade %q failed: %s", updatedRelease.Name, err)
 		//s.setResource(updatedRelease)
-		originalRelease.Status.LastDeploymentStatus.Code = release.Status_SUPERSEDED
-		updatedRelease.Status.LastDeploymentStatus.Code = release.Status_FAILED
+		originalRelease.Status.Code = release.Status_SUPERSEDED
+		updatedRelease.Status.Code = release.Status_FAILED
 		// update status for release
 		_, err = s.Client.Release(updatedRelease.Namespace).Update(updatedRelease)
 		s.recordRelease(originalRelease, true)
@@ -262,9 +262,9 @@ func (s *ReleaseServer) performUpdate(originalRelease, updatedRelease *hapi.Rele
 		}
 	}
 	//s.setResource(updatedRelease)
-	originalRelease.Status.LastDeploymentStatus.Code = release.Status_SUPERSEDED
+	originalRelease.Status.Code = release.Status_SUPERSEDED
 	s.recordRelease(originalRelease, true)
-	updatedRelease.Status.LastDeploymentStatus.Code = release.Status_DEPLOYED
+	updatedRelease.Status.Code = release.Status_DEPLOYED
 	// update release status
 	_, err := s.Client.Release(updatedRelease.Namespace).Update(updatedRelease)
 	if err != nil {
@@ -330,10 +330,10 @@ func (s *ReleaseServer) prepareUpdate(rel *hapi.Release) (*hapi.Release, error) 
 	rel.Spec.Manifest = manifestDoc.String()
 	rel.Status.FirstDeployed = currentRelease.Status.FirstDeployed
 	rel.Status.LastDeployed = unversioned.Now()
-	rel.Status.LastDeploymentStatus = new(release.Status)
+	//rel.Status.LastDeploymentStatus = new(release.Status)
 	rel.Status.LastDeployedVersion = revision
 	if len(notesTxt) > 0 {
-		rel.Status.LastDeploymentStatus.Notes = notesTxt
+		rel.Status.Notes = notesTxt
 	}
 	err = validateManifest(s.env.KubeClient, currentRelease.Namespace, manifestDoc.Bytes())
 	return currentRelease, err
@@ -540,8 +540,8 @@ func (s *ReleaseServer) prepareRelease(rel *hapi.Release) error {
 	// Store a release.
 	rel.Status.FirstDeployed = unversioned.Now()
 	rel.Status.LastDeployed = unversioned.Now()
-	rel.Status.LastDeploymentStatus = new(release.Status)
-	rel.Status.LastDeploymentStatus.Code = release.Status_UNKNOWN
+	//rel.Status.LastDeploymentStatus = new(release.Status)
+	rel.Status.Code = release.Status_UNKNOWN
 	rel.Spec.Hooks = hooks
 	rel.Spec.Manifest = manifestDoc.String()
 	rel.Spec.Version = int32(revision)
@@ -648,8 +648,7 @@ func (s *ReleaseServer) recordRelease(r *hapi.Release, reuse bool) {
 func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 	//res := &services.InstallReleaseResponse{Release: r}
 	//rel.Status = tc_api.ReleaseStatus{}
-	rel.Status.LastDeploymentStatus = new(release.Status)
-
+	//rel.Status.LastDeploymentStatus = new(release.Status)
 	if rel.Spec.DryRun {
 		log.Printf("Dry run for %s", rel.Name)
 		return nil
@@ -698,7 +697,7 @@ func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 		//os.Exit(1)
 		if err := s.env.KubeClient.Create(rel.Namespace, b); err != nil {
 			log.Printf("warning: Release %q failed: %s", rel.Name, err)
-			rel.Status.LastDeploymentStatus.Code = release.Status_FAILED
+			rel.Status.Code = release.Status_FAILED
 			//s.setResource(rel)
 			//update status of release
 			//err = s.performKubeUpdate(rel, rel, false)
@@ -718,7 +717,7 @@ func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 	if !rel.Spec.DisableHooks {
 		if err := s.execHook(rel.Spec.Hooks, rel.Name, rel.ObjectMeta.Namespace, postInstall, rel.Spec.Timeout); err != nil {
 			log.Printf("warning: Release %q failed post-install: %s", rel.Name, err)
-			rel.Status.LastDeploymentStatus.Code = release.Status_FAILED
+			rel.Status.Code = release.Status_FAILED
 			//update status
 			_, err = s.Client.Release(rel.Namespace).Update(rel)
 			if err != nil {
@@ -736,7 +735,7 @@ func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 	//
 	// One possible strategy would be to do a timed retry to see if we can get
 	// this stored in the future.
-	rel.Status.LastDeploymentStatus.Code = release.Status_DEPLOYED
+	rel.Status.Code = release.Status_DEPLOYED
 	_, err := s.Client.Release(rel.Namespace).Update(rel)
 	if err != nil {
 		log.Print("Failed to update release status %s", rel.Name, err)
@@ -745,7 +744,7 @@ func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 	return nil
 }
 
-func (s *ReleaseServer) setResource(rel *hapi.Release) {
+/*func (s *ReleaseServer) setResource(rel *hapi.Release) {
 	b := bytes.NewBufferString(rel.Spec.Manifest)
 	resp, err := s.env.KubeClient.Get(rel.Namespace, b)
 	if err != nil {
@@ -753,7 +752,7 @@ func (s *ReleaseServer) setResource(rel *hapi.Release) {
 	} else {
 		rel.Status.LastDeploymentStatus.Resources = resp
 	}
-}
+}*/
 
 func (s *ReleaseServer) execHook(hs []*release.Hook, name, namespace, hook string, timeout int64) error {
 	kubeCli := s.env.KubeClient
@@ -829,8 +828,8 @@ func (s *ReleaseServer) UninstallRelease(rel *hapi.Release) error {
 		return nil
 	}
 	log.Printf("uninstall: Deleting %s", rel.Name)
-	rel.Status.LastDeploymentStatus = new(release.Status)
-	rel.Status.LastDeploymentStatus.Code = release.Status_DELETING
+	//rel.Status.LastDeploymentStatus = new(release.Status)
+	rel.Status.Code = release.Status_DELETING
 	//rel.Status.Deleted = unversioned.Now()
 	if !rel.Spec.DisableHooks {
 		if err := s.execHook(rel.Spec.Hooks, rel.Name, rel.Namespace, preDelete, rel.Spec.Timeout); err != nil {
@@ -885,7 +884,7 @@ func (s *ReleaseServer) UninstallRelease(rel *hapi.Release) error {
 		}
 	}
 
-	rel.Status.LastDeploymentStatus.Code = release.Status_DELETED
+	rel.Status.Code = release.Status_DELETED
 	if err := s.env.Releases.Update(rel); err != nil {
 		log.Printf("uninstall: Failed to store updated release: %s", err)
 	}

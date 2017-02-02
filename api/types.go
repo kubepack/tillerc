@@ -5,6 +5,7 @@ import (
 	hapi_release "k8s.io/helm/pkg/proto/hapi/release"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/unversioned"
+	google_protobuf1 "github.com/golang/protobuf/ptypes/any"
 )
 
 //-------------------------------------------------------------------------------------------
@@ -112,15 +113,27 @@ type ReleaseVersionList struct {
 }
 
 type ReleaseStatus struct {
-	LastDeploymentStatus *hapi_release.Status `json:"last_deployment_status,omitempty"`
+	//LastDeploymentStatus *hapi_release.Status `json:"last_deployment_status,omitempty"`
+	Code    hapi_release.Status_Code           `protobuf:"varint,1,opt,name=code,enum=hapi.release.Status_Code" json:"code,omitempty"`
+	Details *google_protobuf1.Any `protobuf:"bytes,2,opt,name=details" json:"details,omitempty"`
+	// Cluster resources as kubectl would print them.
+	//Resources string `protobuf:"bytes,3,opt,name=resources" json:"resources,omitempty"`
+	// Contains the rendered templates/NOTES.txt if available
+	Notes string `protobuf:"bytes,4,opt,name=notes" json:"notes,omitempty"`
 	LastDeployedVersion  int32                `json:"last_deployed_version,omitempty"`
 	LastDeployed         unversioned.Time     `json:"last_deployed,omitempty"`
 	FirstDeployed        unversioned.Time     `json:"first_deployed,omitempty"`
 }
 
 type ReleaseVersionStatus struct {
-	Status *hapi_release.Status `protobuf:"bytes,1,opt,name=status" json:"status,omitempty"`
+	//Status *hapi_release.Status `protobuf:"bytes,1,opt,name=status" json:"status,omitempty"`
 	// Version is an int32 which represents the version of the release.
+	Code    hapi_release.Status_Code           `protobuf:"varint,1,opt,name=code,enum=hapi.release.Status_Code" json:"code,omitempty"`
+	Details *google_protobuf1.Any `protobuf:"bytes,2,opt,name=details" json:"details,omitempty"`
+	// Cluster resources as kubectl would print them.
+	//Resources string `protobuf:"bytes,3,opt,name=resources" json:"resources,omitempty"`
+	// Contains the rendered templates/NOTES.txt if available
+	Notes string `protobuf:"bytes,4,opt,name=notes" json:"notes,omitempty"`
 	Version  int32            `protobuf:"varint,7,opt,name=version" json:"version,omitempty"`
 	Deployed unversioned.Time `protobuf:"bytes,2,opt,name=deployed,json=firstDeployed" json:"deployed,omitempty"`
 }
