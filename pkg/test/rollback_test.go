@@ -49,7 +49,6 @@ func TestRollback(t *testing.T) {
 	if err != nil {
 		log.Fatalln(err)
 	}
-
 }
 
 func getKubernetesClient() *internalclientset.Clientset {

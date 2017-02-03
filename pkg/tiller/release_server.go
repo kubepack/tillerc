@@ -56,6 +56,7 @@ import (
 	"k8s.io/kubernetes/pkg/client/typed/discovery"
 	"k8s.io/kubernetes/pkg/fields"
 	"strconv"
+	//"github.com/ghodss/yaml"
 )
 
 // releaseNameMaxLen is the maximum length of a release name.
@@ -161,7 +162,18 @@ func (s *ReleaseServer) RunAndHold() {
 				}
 			},
 			UpdateFunc: func(old, new interface{}) {
-				if !reflect.DeepEqual(old, new) {
+				// update status from here
+				o, ok := old.(*hapi.Release)
+				if !ok {
+					log.Println("Error in release type")
+				}
+				n, ok := new.(*hapi.Release)
+				if !ok {
+					log.Println("Error in release type")
+				}
+				if !reflect.DeepEqual(o.Status, n.Status) {
+					log.Println("Release status updated")
+				} else if !reflect.DeepEqual(old, new) {
 					glog.Infoln("got one updated event", new.(*hapi.Release))
 					s.UpdateRelease(new.(*hapi.Release))
 				}
@@ -220,13 +232,12 @@ func (s *ReleaseServer) UpdateRelease(rel *hapi.Release) error {
 }
 
 func (s *ReleaseServer) performUpdate(originalRelease, updatedRelease *hapi.Release) error {
-	updatedRelease.Status.Status = new(release.Status)
+	//updatedRelease.Status.LastDeploymentStatus = new(release.Status)
 
-	//TODO handle dry run sauman
-	/*	if req.DryRun {
+	if updatedRelease.Spec.DryRun {
 		log.Printf("Dry run for %s", updatedRelease.Name)
-		return res, nil
-	}*/
+		return nil
+	}
 	// pre-upgrade hooks
 	if !updatedRelease.Spec.DisableHooks {
 		if err := s.execHook(updatedRelease.Spec.Hooks, updatedRelease.Name, updatedRelease.Namespace, preUpgrade, updatedRelease.Spec.Timeout); err != nil {
@@ -235,8 +246,11 @@ func (s *ReleaseServer) performUpdate(originalRelease, updatedRelease *hapi.Rele
 	}
 	if err := s.performKubeUpdate(originalRelease, updatedRelease, updatedRelease.Spec.Recreate); err != nil {
 		log.Printf("warning: Release Upgrade %q failed: %s", updatedRelease.Name, err)
-		originalRelease.Status.Status.Code = release.Status_SUPERSEDED
-		updatedRelease.Status.Status.Code = release.Status_FAILED
+		//s.setResource(updatedRelease)
+		originalRelease.Status.Code = release.Status_SUPERSEDED
+		updatedRelease.Status.Code = release.Status_FAILED
+		// update status for release
+		_, err = s.Client.Release(updatedRelease.Namespace).Update(updatedRelease)
 		s.recordRelease(originalRelease, true)
 		s.recordRelease(updatedRelease, false)
 		return err
@@ -247,9 +261,15 @@ func (s *ReleaseServer) performUpdate(originalRelease, updatedRelease *hapi.Rele
 			return err
 		}
 	}
-	originalRelease.Status.Status.Code = release.Status_SUPERSEDED
+	//s.setResource(updatedRelease)
+	originalRelease.Status.Code = release.Status_SUPERSEDED
 	s.recordRelease(originalRelease, true)
-	updatedRelease.Status.Status.Code = release.Status_DEPLOYED
+	updatedRelease.Status.Code = release.Status_DEPLOYED
+	// update release status
+	_, err := s.Client.Release(updatedRelease.Namespace).Update(updatedRelease)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -265,6 +285,7 @@ func (s *ReleaseServer) reuseValues(req *hapi.Release, current *hapi.Release) {
 
 // prepareUpdate builds an updated release for an update operation.
 func (s *ReleaseServer) prepareUpdate(rel *hapi.Release) (*hapi.Release, error) {
+	//rel is the updated release
 	if !ValidName.MatchString(rel.Name) {
 		return nil, errMissingRelease
 	}
@@ -304,14 +325,15 @@ func (s *ReleaseServer) prepareUpdate(rel *hapi.Release) (*hapi.Release, error) 
 	if err != nil {
 		return nil, err
 	}
-	//rel is the updated release
 	rel.Spec.Hooks = hooks
 	rel.Spec.Version = revision
 	rel.Spec.Manifest = manifestDoc.String()
 	rel.Status.FirstDeployed = currentRelease.Status.FirstDeployed
 	rel.Status.LastDeployed = unversioned.Now()
+	//rel.Status.LastDeploymentStatus = new(release.Status)
+	rel.Status.LastDeployedVersion = revision
 	if len(notesTxt) > 0 {
-		rel.Status.Status.Notes = notesTxt
+		rel.Status.Notes = notesTxt
 	}
 	err = validateManifest(s.env.KubeClient, currentRelease.Namespace, manifestDoc.Bytes())
 	return currentRelease, err
@@ -334,17 +356,15 @@ func (s *ReleaseServer) RollbackRelease(e *api.Event) error {
 	if err != nil {
 		return err
 	}
-
 	err = s.performRollback(currentRelease, targetRelease, e)
 	if err != nil {
 		return err
 	}
-	/*	fmt.Println(targetRelease)
-		if !rollbackReq.DryRun {
-			if err := s.env.Releases.Create(targetRelease); err != nil {
-				return err
-			}
-		}*/
+	/*if !rollbackReq.DryRun {
+		if err := s.env.Releases.Create(targetRelease); err != nil {
+			return err
+		}
+	}*/
 	return nil
 }
 
@@ -409,18 +429,13 @@ func (s *ReleaseServer) performKubeUpdate(currentRelease, targetRelease *hapi.Re
 // prepareRollback finds the previous release and prepares a new release object with
 //  the previous release's configuration
 func (s *ReleaseServer) prepareRollback(e *api.Event) (*hapi.Release, *hapi.Release, error) {
-	r := strings.SplitN(e.InvolvedObject.Name, "-", 2)
+	r := strings.Split(e.InvolvedObject.Name, "-")
 	var version int32
 	version = int32(0)
 	var err error
-	releaseName := r[0]
-	if len(r) == 2 {
-		val, err := strconv.Atoi(strings.TrimPrefix(r[1], "v"))
-		if err != nil {
-			return nil, nil, errors.New("Version not found")
-		}
-		version = int32(val)
-	}
+	releaseName := driver.GetReleaseNameFromReleaseVersion(e.InvolvedObject.Name)
+	val, err := strconv.Atoi(strings.TrimPrefix(r[len(r)-1], "v"))
+	version = int32(val)
 	switch {
 	case !ValidName.MatchString(releaseName):
 		return nil, nil, errMissingRelease
@@ -477,9 +492,9 @@ func (s *ReleaseServer) InstallRelease(rel *hapi.Release) error {
 		// On dry run, append the manifest contents to a failed release. This is
 		// a stop-gap until we can revisit an error backchannel post-2.0.
 		//TODO check later
-		/*		if req.DryRun && strings.HasPrefix(err.Error(), "YAML parse error") {
-				err = fmt.Errorf("%s\n%s", err, rel.Manifest)
-			}*/
+		if rel.Spec.DryRun && strings.HasPrefix(err.Error(), "YAML parse error") {
+			err = fmt.Errorf("%s\n%s", err, rel.Spec.Manifest)
+		}
 		return err
 	}
 	err = s.performRelease(rel)
@@ -495,7 +510,7 @@ func (s *ReleaseServer) prepareRelease(rel *hapi.Release) error {
 		return errMissingChart
 	}
 
-	// Tamal
+	// Tamal // handled name from cli side (sauman)
 	//name, err := s.uniqName(req.Name, req.ReuseName)
 	//if err != nil {
 	//	return nil, err
@@ -515,10 +530,9 @@ func (s *ReleaseServer) prepareRelease(rel *hapi.Release) error {
 	}
 	valuesToRender, err := chartutil.ToRenderValues(rel.Spec.Chart.Inline, rel.Spec.Config, options)
 	if err != nil {
-
 		return err
 	}
-	hooks, manifestDoc, _, err := s.renderResources(rel.Spec.Chart.Inline, valuesToRender) // noteTxt
+	hooks, manifestDoc, notesTxt, err := s.renderResources(rel.Spec.Chart.Inline, valuesToRender) // noteTxt
 	if err != nil {
 		return err
 	}
@@ -526,15 +540,15 @@ func (s *ReleaseServer) prepareRelease(rel *hapi.Release) error {
 	// Store a release.
 	rel.Status.FirstDeployed = unversioned.Now()
 	rel.Status.LastDeployed = unversioned.Now()
-	rel.Status.Status = new(release.Status)
-	rel.Status.Status.Code = release.Status_UNKNOWN
+	//rel.Status.LastDeploymentStatus = new(release.Status)
+	rel.Status.Code = release.Status_UNKNOWN
 	rel.Spec.Hooks = hooks
 	rel.Spec.Manifest = manifestDoc.String()
 	rel.Spec.Version = int32(revision)
 
-	/*	if len(notesTxt) > 0 {
-		rel.Info.Status.Notes = notesTxt
-	}*/
+	if len(notesTxt) > 0 {
+		rel.Status.Notes = notesTxt
+	}
 
 	err = validateManifest(s.env.KubeClient, rel.Namespace, manifestDoc.Bytes())
 	return err
@@ -634,8 +648,7 @@ func (s *ReleaseServer) recordRelease(r *hapi.Release, reuse bool) {
 func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 	//res := &services.InstallReleaseResponse{Release: r}
 	//rel.Status = tc_api.ReleaseStatus{}
-	rel.Status.Status = new(release.Status)
-
+	//rel.Status.LastDeploymentStatus = new(release.Status)
 	if rel.Spec.DryRun {
 		log.Printf("Dry run for %s", rel.Name)
 		return nil
@@ -647,7 +660,7 @@ func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 			return err
 		}
 	}
-
+	rel.Status.LastDeployedVersion = 1
 	switch /* h, err := s.env.Releases.History(rel.Name);*/ {
 
 	// TODO handle replace part
@@ -679,22 +692,37 @@ func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 	default:
 		// nothing to replace, create as normal
 		// regular manifests
+
 		b := bytes.NewBufferString(rel.Spec.Manifest)
 		//os.Exit(1)
 		if err := s.env.KubeClient.Create(rel.Namespace, b); err != nil {
 			log.Printf("warning: Release %q failed: %s", rel.Name, err)
-			rel.Status.Status.Code = release.Status_FAILED
+			rel.Status.Code = release.Status_FAILED
+			//s.setResource(rel)
+			//update status of release
+			//err = s.performKubeUpdate(rel, rel, false)
+			_, err = s.Client.Release(rel.Namespace).Update(rel)
+			//err = s.UpdateRelease(rel)
+			if err != nil {
+				log.Printf("Failed to update release status %s", rel.Name)
+			}
 			// record release in a release version ...
 			s.recordRelease(rel, false)
 			return fmt.Errorf("release %s failed: %s", rel.Name, err)
 		}
+		//s.setResource(rel)
 	}
 
 	// post-install hooks
 	if !rel.Spec.DisableHooks {
 		if err := s.execHook(rel.Spec.Hooks, rel.Name, rel.ObjectMeta.Namespace, postInstall, rel.Spec.Timeout); err != nil {
 			log.Printf("warning: Release %q failed post-install: %s", rel.Name, err)
-			rel.Status.Status.Code = release.Status_FAILED
+			rel.Status.Code = release.Status_FAILED
+			//update status
+			_, err = s.Client.Release(rel.Namespace).Update(rel)
+			if err != nil {
+				log.Printf("Failed to update release status %s", rel.Name)
+			}
 			s.recordRelease(rel, false)
 			return err
 		}
@@ -707,12 +735,24 @@ func (s *ReleaseServer) performRelease(rel *hapi.Release) error {
 	//
 	// One possible strategy would be to do a timed retry to see if we can get
 	// this stored in the future.
-	rel.Status.Status.Code = release.Status_DEPLOYED
-
+	rel.Status.Code = release.Status_DEPLOYED
+	_, err := s.Client.Release(rel.Namespace).Update(rel)
+	if err != nil {
+		log.Print("Failed to update release status %s", rel.Name, err)
+	}
 	s.recordRelease(rel, false)
-
 	return nil
 }
+
+/*func (s *ReleaseServer) setResource(rel *hapi.Release) {
+	b := bytes.NewBufferString(rel.Spec.Manifest)
+	resp, err := s.env.KubeClient.Get(rel.Namespace, b)
+	if err != nil {
+		log.Println("ERROR Resource not set")
+	} else {
+		rel.Status.LastDeploymentStatus.Resources = resp
+	}
+}*/
 
 func (s *ReleaseServer) execHook(hs []*release.Hook, name, namespace, hook string, timeout int64) error {
 	kubeCli := s.env.KubeClient
@@ -788,9 +828,9 @@ func (s *ReleaseServer) UninstallRelease(rel *hapi.Release) error {
 		return nil
 	}
 	log.Printf("uninstall: Deleting %s", rel.Name)
-	rel.Status.Status = new(release.Status)
-	rel.Status.Status.Code = release.Status_DELETING
-	rel.Status.Deleted = unversioned.Now()
+	//rel.Status.LastDeploymentStatus = new(release.Status)
+	rel.Status.Code = release.Status_DELETING
+	//rel.Status.Deleted = unversioned.Now()
 	if !rel.Spec.DisableHooks {
 		if err := s.execHook(rel.Spec.Hooks, rel.Name, rel.Namespace, preDelete, rel.Spec.Timeout); err != nil {
 			return err
@@ -844,7 +884,7 @@ func (s *ReleaseServer) UninstallRelease(rel *hapi.Release) error {
 		}
 	}
 
-	rel.Status.Status.Code = release.Status_DELETED
+	rel.Status.Code = release.Status_DELETED
 	if err := s.env.Releases.Update(rel); err != nil {
 		log.Printf("uninstall: Failed to store updated release: %s", err)
 	}

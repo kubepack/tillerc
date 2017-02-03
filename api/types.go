@@ -5,6 +5,7 @@ import (
 	hapi_release "k8s.io/helm/pkg/proto/hapi/release"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/unversioned"
+	google_protobuf1 "github.com/golang/protobuf/ptypes/any"
 )
 
 //-------------------------------------------------------------------------------------------
@@ -68,7 +69,7 @@ type ReleaseSpec struct {
 	DryRun bool `protobuf:"varint,4,opt,name=dry_run,json=dryRun" json:"dry_run,omitempty"`
 }
 
-type ReleaseStatus struct {
+/*type ReleaseStatus struct {
 	// Info contains information about the release.
 	//Info *Info `protobuf:"bytes,2,opt,name=info" json:"info,omitempty"`
 
@@ -77,7 +78,7 @@ type ReleaseStatus struct {
 	LastDeployed  unversioned.Time     `protobuf:"bytes,3,opt,name=last_deployed,json=lastDeployed" json:"last_deployed,omitempty"`
 	// Deleted tracks when this object was deleted.
 	Deleted unversioned.Time `protobuf:"bytes,4,opt,name=deleted" json:"deleted,omitempty"`
-}
+}*/
 
 type ReleaseList struct {
 	unversioned.TypeMeta `json:",inline"`
@@ -100,13 +101,39 @@ type ReleaseVersionSpec struct {
 	ReleaseSpec ReleaseSpec `json:"inline,omitempty"`
 }
 
-type ReleaseVersionStatus struct {
+/*type ReleaseVersionStatus struct {
 	Status   *hapi_release.Status `protobuf:"bytes,1,opt,name=status" json:"status,omitempty"`
 	Deployed unversioned.Time     `protobuf:"bytes,2,opt,name=deployed" json:"deployed,omitempty"`
-}
+}*/
 
 type ReleaseVersionList struct {
 	unversioned.TypeMeta `json:",inline"`
 	unversioned.ListMeta `json:"metadata,omitempty"`
 	Items                []ReleaseVersion `json:"items,omitempty"`
+}
+
+type ReleaseStatus struct {
+	//LastDeploymentStatus *hapi_release.Status `json:"last_deployment_status,omitempty"`
+	Code    hapi_release.Status_Code           `protobuf:"varint,1,opt,name=code,enum=hapi.release.Status_Code" json:"code,omitempty"`
+	Details *google_protobuf1.Any `protobuf:"bytes,2,opt,name=details" json:"details,omitempty"`
+	// Cluster resources as kubectl would print them.
+	//Resources string `protobuf:"bytes,3,opt,name=resources" json:"resources,omitempty"`
+	// Contains the rendered templates/NOTES.txt if available
+	Notes string `protobuf:"bytes,4,opt,name=notes" json:"notes,omitempty"`
+	LastDeployedVersion  int32                `json:"last_deployed_version,omitempty"`
+	LastDeployed         unversioned.Time     `json:"last_deployed,omitempty"`
+	FirstDeployed        unversioned.Time     `json:"first_deployed,omitempty"`
+}
+
+type ReleaseVersionStatus struct {
+	//Status *hapi_release.Status `protobuf:"bytes,1,opt,name=status" json:"status,omitempty"`
+	// Version is an int32 which represents the version of the release.
+	Code    hapi_release.Status_Code           `protobuf:"varint,1,opt,name=code,enum=hapi.release.Status_Code" json:"code,omitempty"`
+	Details *google_protobuf1.Any `protobuf:"bytes,2,opt,name=details" json:"details,omitempty"`
+	// Cluster resources as kubectl would print them.
+	//Resources string `protobuf:"bytes,3,opt,name=resources" json:"resources,omitempty"`
+	// Contains the rendered templates/NOTES.txt if available
+	Notes string `protobuf:"bytes,4,opt,name=notes" json:"notes,omitempty"`
+	Version  int32            `protobuf:"varint,7,opt,name=version" json:"version,omitempty"`
+	Deployed unversioned.Time `protobuf:"bytes,2,opt,name=deployed,json=firstDeployed" json:"deployed,omitempty"`
 }
