@@ -98,7 +98,7 @@ type KubeClient interface {
 	//
 	// reader must contain a YAML stream (one or more YAML documents separated
 	// by "\n---\n").
-	Create(namespace string, reader io.Reader) error
+	Create(namespace string, reader io.Reader, timeout int64, shouldWait bool) error
 
 	// Get gets one or more resources. Returned string hsa the format like kubectl
 	// provides with the column headers separating the resource types.
@@ -122,7 +122,7 @@ type KubeClient interface {
 	// For Jobs, "ready" means the job ran to completion (excited without error).
 	// For all other kinds, it means the kind was created or modified without
 	// error.
-	WatchUntilReady(namespace string, reader io.Reader, timeout int64) error
+	WatchUntilReady(namespace string, reader io.Reader, timeout int64, shouldWait bool) error
 
 	// Update updates one or more resources or creates the resource
 	// if it doesn't exist
@@ -131,9 +131,9 @@ type KubeClient interface {
 	//
 	// reader must contain a YAML stream (one or more YAML documents separated
 	// by "\n---\n").
-	Update(namespace string, originalReader, modifiedReader io.Reader, recreate bool) error
+	Update(namespace string, originalReader, targetReader io.Reader, recreate bool, timeout int64, shouldWait bool) error
 
-	Build(namespace string, reader io.Reader) ([]*resource.Info, error)
+	Build(namespace string, reader io.Reader) (kube.Result, error)
 }
 
 // PrintingKubeClient implements KubeClient, but simply prints the reader to

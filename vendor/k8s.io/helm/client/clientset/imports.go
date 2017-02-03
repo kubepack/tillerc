@@ -4,7 +4,7 @@ package client
 import (
 	"fmt"
 
-	_ "github.com/appscode/tillerc/api/install"
+	_ "k8s.io/helm/api/install"
 	_ "k8s.io/kubernetes/pkg/api/install"
 	"k8s.io/kubernetes/pkg/apimachinery/registered"
 	_ "k8s.io/kubernetes/pkg/apis/apps/install"

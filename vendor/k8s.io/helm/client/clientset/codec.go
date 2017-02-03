@@ -7,9 +7,9 @@ import (
 	"reflect"
 	"strings"
 
-	aci "github.com/appscode/tillerc/api"
 	"github.com/ghodss/yaml"
-	"github.com/golang/glog"
+	aci "k8s.io/helm/api"
+	//"github.com/golang/glog"
 	"k8s.io/kubernetes/pkg/api"
 	schema "k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/runtime"
@@ -77,10 +77,10 @@ func (e *extendedCodec) Decode(data []byte, gvk *schema.GroupVersionKind, obj ru
 		if err != nil {
 			return obj, gvk, err
 		}
-		glog.V(7).Infoln("Detected metadata type for nil object, got", metadata.APIVersion, metadata.Kind)
+		//glog.V(7).Infoln("Detected metadata type for nil object, got", metadata.APIVersion, metadata.Kind)
 		obj, err = setDefaultType(metadata)
 		if err != nil {
-			glog.Errorln("faild to create type", err)
+			//	glog.Errorln("faild to create type", err)
 		}
 	}
 	err := json.Unmarshal(data, obj)

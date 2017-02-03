@@ -1,7 +1,7 @@
 package client
 
 import (
-	aci "github.com/appscode/tillerc/api"
+	aci "k8s.io/helm/api"
 	"k8s.io/kubernetes/pkg/api"
 	rest "k8s.io/kubernetes/pkg/client/restclient"
 	"k8s.io/kubernetes/pkg/watch"

@@ -1,6 +1,6 @@
 package client
 
-import aci "github.com/appscode/tillerc/api"
+import aci "k8s.io/helm/api"
 
 // The ReleaseExpansion interface allows manually adding extra methods to the ReleaseInterface.
 type ReleaseExpansion interface {

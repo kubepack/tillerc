@@ -23,13 +23,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/appscode/tillerc/client/clientset"
+	"k8s.io/helm/client/clientset"
 	"k8s.io/kubernetes/pkg/api"
 	kberrs "k8s.io/kubernetes/pkg/api/errors"
 
 	"strings"
 
-	hapi "github.com/appscode/tillerc/api"
+	hapi "k8s.io/helm/api"
 	rspb "k8s.io/helm/pkg/proto/hapi/release"
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	kblabels "k8s.io/kubernetes/pkg/labels"
@@ -77,10 +77,10 @@ func (versions *ReleaseVersions) Get(key string) (*hapi.Release, error) {
 
 	// return the release object
 	// TODO sauman add more info
-	s := strings.SplitN(obj.Name, "-", 2)
+	s := GetReleaseNameFromReleaseVersion(obj.Name)
 	meta := api.ObjectMeta{
 		Namespace: obj.Namespace,
-		Name:      s[0],
+		Name:      s,
 	}
 	type_ := unversioned.TypeMeta{
 		Kind:       "Release",
@@ -222,7 +222,7 @@ func newReleaseVersionObject(key string, rls *hapi.Release, lbs labels) (*hapi.R
 	// apply labels
 	lbs.set("NAME", rls.Name)
 	lbs.set("OWNER", owner)
-	lbs.set("STATUS", rspb.Status_Code_name[int32(rls.Status.Status.Code)])
+	lbs.set("STATUS", rspb.Status_Code_name[int32(rls.Status.Code)])
 	lbs.set("VERSION", strconv.Itoa(int(rls.Spec.Version)))
 	//create and return release version object
 	//  TODO Handle first release and last release
@@ -234,14 +234,18 @@ func newReleaseVersionObject(key string, rls *hapi.Release, lbs labels) (*hapi.R
 		},
 	}
 	releaseVersion.Spec.ReleaseSpec = rls.Spec
-	releaseVersion.Status.Status = rls.Status.Status // status of release kept in release version
+	releaseVersion.Status.Code = rls.Status.Code // status of release kept in release version
+	releaseVersion.Status.Details = rls.Status.Details
+	releaseVersion.Status.Notes = rls.Status.Notes
+	releaseVersion.Status.Version = rls.Status.LastDeployedVersion
 	releaseVersion.Status.Deployed = rls.Status.LastDeployed
+	//releaseVersion.Status.Deployed = rls.Status.LastDeployed
 	return releaseVersion, nil
 }
 
 // logerrf wraps an error with the a formatted string (used for debugging)
 func logerrf(err error, format string, args ...interface{}) {
-	log.Printf("configmaps: %s: %s\n", fmt.Sprintf(format, args...), err)
+	log.Printf("releaseversions: %s: %s\n", fmt.Sprintf(format, args...), err)
 }
 
 func getReleaseFromReleaseVersion(rv *hapi.ReleaseVersion) (*hapi.Release, error) {
@@ -250,7 +254,11 @@ func getReleaseFromReleaseVersion(rv *hapi.ReleaseVersion) (*hapi.Release, error
 	rs.TypeMeta.Kind = "helm.sh/v1beta1"
 	rs.Spec = rv.Spec.ReleaseSpec
 	rs.ObjectMeta = rv.ObjectMeta
-	rs.Status.Status = rv.Status.Status
+	//rs.Status.LastDeploymentStatus = new(rspb.Status)
+	rs.Status.Code = rv.Status.Code
+	rs.Status.Notes = rv.Status.Notes
+	rs.Status.Details = rv.Status.Details
+	rs.Status.LastDeployedVersion = rv.Status.Version
 	rs.Status.LastDeployed = rv.Status.Deployed
 	rs.Name = GetReleaseNameFromReleaseVersion(rv.Name)
 	return rs, nil
@@ -258,5 +266,7 @@ func getReleaseFromReleaseVersion(rv *hapi.ReleaseVersion) (*hapi.Release, error
 
 func GetReleaseNameFromReleaseVersion(name string) string {
 	releaseName := strings.Split(name, "-")
-	return releaseName[0]
+	releaseName = releaseName[0 : len(releaseName)-1]
+	result := strings.Join(releaseName, "-")
+	return result
 }

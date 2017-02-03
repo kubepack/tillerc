@@ -1,7 +1,7 @@
 package install
 
 import (
-	aci "github.com/appscode/tillerc/api"
+	aci "k8s.io/helm/api"
 	"k8s.io/kubernetes/pkg/apimachinery/announced"
 	"k8s.io/kubernetes/pkg/util/sets"
 )
