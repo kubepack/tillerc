@@ -23,13 +23,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/appscode/tillerc/client/clientset"
+	"k8s.io/helm/client/clientset"
 	"k8s.io/kubernetes/pkg/api"
 	kberrs "k8s.io/kubernetes/pkg/api/errors"
 
 	"strings"
 
-	hapi "github.com/appscode/tillerc/api"
+	hapi "k8s.io/helm/api"
 	rspb "k8s.io/helm/pkg/proto/hapi/release"
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	kblabels "k8s.io/kubernetes/pkg/labels"

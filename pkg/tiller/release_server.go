@@ -20,8 +20,8 @@ import (
 	"reflect"
 	"time"
 
-	hapi "github.com/appscode/tillerc/api"
-	hcs "github.com/appscode/tillerc/client/clientset"
+	hapi "k8s.io/helm/api"
+	hcs "k8s.io/helm/client/clientset"
 	"github.com/golang/glog"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/client/cache"
@@ -38,8 +38,8 @@ import (
 	"regexp"
 	"strings"
 
-	tc_api "github.com/appscode/tillerc/api"
-	"github.com/appscode/tillerc/client/clientset"
+	tc_api "k8s.io/helm/api"
+	"k8s.io/helm/client/clientset"
 	relutil "github.com/appscode/tillerc/pkg/releaseutil"
 	"github.com/appscode/tillerc/pkg/storage"
 	"github.com/appscode/tillerc/pkg/storage/driver"

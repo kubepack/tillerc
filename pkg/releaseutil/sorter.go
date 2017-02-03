@@ -19,7 +19,7 @@ package releaseutil // import "github.com/appscode/tillerc/pkg/releaseutil"
 import (
 	"sort"
 
-	hapi "github.com/appscode/tillerc/api"
+	hapi "k8s.io/helm/api"
 	//rspb "k8s.io/helm/pkg/proto/hapi/release"
 )
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	_ "github.com/appscode/tillerc/api/install"
+	_ "k8s.io/helm/api/install"
 	"github.com/appscode/tillerc/pkg/tiller"
 	"github.com/appscode/tillerc/pkg/tiller/environment"
 	"github.com/golang/glog"

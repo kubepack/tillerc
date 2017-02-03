@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"log"
 
-	hapi "github.com/appscode/tillerc/api"
+	hapi "k8s.io/helm/api"
 	relutil "github.com/appscode/tillerc/pkg/releaseutil"
 	"github.com/appscode/tillerc/pkg/storage/driver"
 	rspb "k8s.io/helm/pkg/proto/hapi/release"
