@@ -532,7 +532,7 @@ func (s *ReleaseServer) prepareRelease(rel *hapi.Release) error {
 	if err != nil {
 		return err
 	}
-	hooks, manifestDoc, _, err := s.renderResources(rel.Spec.Chart.Inline, valuesToRender) // noteTxt
+	hooks, manifestDoc, notesTxt, err := s.renderResources(rel.Spec.Chart.Inline, valuesToRender) // noteTxt
 	if err != nil {
 		return err
 	}
@@ -546,9 +546,9 @@ func (s *ReleaseServer) prepareRelease(rel *hapi.Release) error {
 	rel.Spec.Manifest = manifestDoc.String()
 	rel.Spec.Version = int32(revision)
 
-	/*	if len(notesTxt) > 0 {
-		rel.Info.Status.Notes = notesTxt
-	}*/
+	if len(notesTxt) > 0 {
+		rel.Status.Notes = notesTxt
+	}
 
 	err = validateManifest(s.env.KubeClient, rel.Namespace, manifestDoc.Bytes())
 	return err
