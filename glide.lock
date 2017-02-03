@@ -1,5 +1,5 @@
-hash: 3cdd275e8b89484faa3f70798dedd664ebc9cf595ff6472b3aebbff8ada50934
-updated: 2016-12-24T12:11:41.030302618-08:00
+hash: df40f715b81f3d88a257929fde3e27c5c32270bbdbbffdff768da991491e98bb
+updated: 2017-02-03T03:46:21.477711326-08:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -148,7 +148,9 @@ imports:
   version: df1d3ca07d2d07bba352d5b73c4313b4e2a6203e
   subpackages:
   - proto
+  - ptypes
   - ptypes/any
+  - ptypes/duration
   - ptypes/timestamp
 - name: github.com/google/gofuzz
   version: bbcb9da2d746f8bdbd6a936686a0a6067ada0ec5
@@ -188,6 +190,8 @@ imports:
   version: f62e98d28ab7ad31d707ba837a966378465c7b57
 - name: github.com/spf13/pflag
   version: 5ccb023bc27df288a957c5e994cd44fd19619465
+- name: github.com/technosophos/moniker
+  version: 9f956786b91d9786ca11aa5be6104542fa911546
 - name: github.com/ugorji/go
   version: f1f1a805ed361a0e078bb537e4ea78cd37dcf065
   subpackages:
@@ -264,11 +268,19 @@ imports:
   - transport
 - name: gopkg.in/inf.v0
   version: 3887ee99ecf07df5b447e9b00d9c0b2adaa9f3e4
-- name: gopkg.in/yaml.v2
-  version: 53feefa2559fb8dfa8d81baad31be332c97d6c77
-- name: k8s.io/helm
-  version: b928088a8af01802054522d2206dd155587c355e
+- name: gopkg.in/square/go-jose.v1
+  version: aa2e30fdd1fe9dd3394119af66451ae790d50e0d
   subpackages:
+  - json
+- name: gopkg.in/yaml.v2
+  version: a83829b6f1293c91addabc89d0571c246397bbf4
+- name: k8s.io/helm
+  version: f936035d7c4dfd94405456ae95645d3d8c94bb65
+  repo: https://github.com/appscode/helm.git
+  subpackages:
+  - api
+  - api/install
+  - client/clientset
   - pkg/chartutil
   - pkg/engine
   - pkg/helm
@@ -285,7 +297,7 @@ imports:
   - pkg/timeconv
   - pkg/version
 - name: k8s.io/kubernetes
-  version: 5f332aab13e58173f85fd204a2c77731f7a2573f
+  version: b5f9d56cab78ccaad2b726223ba8be5802026f0b
   subpackages:
   - federation/apis/federation
   - federation/apis/federation/install
@@ -478,7 +490,9 @@ imports:
   - third_party/forked/golang/reflect
   - third_party/forked/golang/template
 testImports:
+- name: github.com/appscode/go
+  version: 7ba1c0a441c6c319a501e54db6e93deaff5fe0dd
+  subpackages:
+  - env
 - name: github.com/stretchr/testify
   version: 69483b4bd14f5845b5a1e55bca19e954e827f1d0
-  subpackages:
-  - assert

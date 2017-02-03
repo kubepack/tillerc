@@ -28,9 +28,9 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/errors"
 	"k8s.io/kubernetes/pkg/api/v1"
-	"k8s.io/kubernetes/pkg/apimachinery/registered"
 	apps "k8s.io/kubernetes/pkg/apis/apps/v1beta1"
 	"k8s.io/kubernetes/pkg/apis/batch"
+	"k8s.io/kubernetes/pkg/apis/extensions"
 	"k8s.io/kubernetes/pkg/apis/extensions/v1beta1"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	"k8s.io/kubernetes/pkg/client/unversioned/clientcmd"
@@ -41,6 +41,7 @@ import (
 	"k8s.io/kubernetes/pkg/labels"
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/util/strategicpatch"
+	"k8s.io/kubernetes/pkg/util/wait"
 	"k8s.io/kubernetes/pkg/watch"
 )
 
@@ -65,19 +66,10 @@ func New(config clientcmd.ClientConfig) *Client {
 // ResourceActorFunc performs an action on a single resource.
 type ResourceActorFunc func(*resource.Info) error
 
-// ErrAlreadyExists can be returned where there are no changes
-type ErrAlreadyExists struct {
-	errorMsg string
-}
-
-func (e ErrAlreadyExists) Error() string {
-	return fmt.Sprintf("Looks like there are no changes for %s", e.errorMsg)
-}
-
 // Create creates kubernetes resources from an io.reader
 //
 // Namespace will set the namespace
-func (c *Client) Create(namespace string, reader io.Reader) error {
+func (c *Client) Create(namespace string, reader io.Reader, timeout int64, shouldWait bool) error {
 	client, err := c.ClientSet()
 	if err != nil {
 		return err
@@ -85,7 +77,18 @@ func (c *Client) Create(namespace string, reader io.Reader) error {
 	if err := ensureNamespace(client, namespace); err != nil {
 		return err
 	}
-	return perform(c, namespace, reader, createResource)
+	infos, buildErr := c.Build(namespace, reader)
+	if buildErr != nil {
+		return buildErr
+	}
+	err = perform(c, namespace, infos, createResource)
+	if err != nil {
+		return err
+	}
+	if shouldWait {
+		err = c.waitForResources(time.Duration(timeout)*time.Second, infos)
+	}
+	return err
 }
 
 func (c *Client) newBuilder(namespace string, reader io.Reader) *resource.Result {
@@ -104,8 +107,10 @@ func (c *Client) newBuilder(namespace string, reader io.Reader) *resource.Result
 }
 
 // Build validates for Kubernetes objects and returns resource Infos from a io.Reader.
-func (c *Client) Build(namespace string, reader io.Reader) ([]*resource.Info, error) {
-	return c.newBuilder(namespace, reader).Infos()
+func (c *Client) Build(namespace string, reader io.Reader) (Result, error) {
+	var result Result
+	result, err := c.newBuilder(namespace, reader).Infos()
+	return result, scrubValidationError(err)
 }
 
 // Get gets kubernetes resources as pretty printed string
@@ -115,8 +120,13 @@ func (c *Client) Get(namespace string, reader io.Reader) (string, error) {
 	// Since we don't know what order the objects come in, let's group them by the types, so
 	// that when we print them, they come looking good (headers apply to subgroups, etc.)
 	objs := make(map[string][]runtime.Object)
-	err := perform(c, namespace, reader, func(info *resource.Info) error {
-		log.Printf("Doing get for: '%s'", info.Name)
+
+	infos, err := c.Build(namespace, reader)
+	if err != nil {
+		return "", err
+	}
+	err = perform(c, namespace, infos, func(info *resource.Info) error {
+		//log.Printf("Doing get for: '%s'", info.Name)
 		obj, err := resource.NewHelper(info.Client, info.Mapping).Get(info.Namespace, info.Name, info.Export)
 		if err != nil {
 			return err
@@ -134,6 +144,9 @@ func (c *Client) Get(namespace string, reader io.Reader) (string, error) {
 		objs[objType] = append(objs[objType], obj)
 		return nil
 	})
+	if err != nil {
+		return "", err
+	}
 
 	// Ok, now we have all the objects grouped by types (say, by v1/Pod, v1/Service, etc.), so
 	// spin through them and print them. Printer is cool since it prints the header only when
@@ -142,23 +155,20 @@ func (c *Client) Get(namespace string, reader io.Reader) (string, error) {
 	buf := new(bytes.Buffer)
 	p := kubectl.NewHumanReadablePrinter(kubectl.PrintOptions{})
 	for t, ot := range objs {
-		_, err = buf.WriteString("==> " + t + "\n")
-		if err != nil {
+		if _, err = buf.WriteString("==> " + t + "\n"); err != nil {
 			return "", err
 		}
 		for _, o := range ot {
-			err = p.PrintObj(o, buf)
-			if err != nil {
+			if err := p.PrintObj(o, buf); err != nil {
 				log.Printf("failed to print object type '%s', object: '%s' :\n %v", t, o, err)
 				return "", err
 			}
 		}
-		_, err := buf.WriteString("\n")
-		if err != nil {
+		if _, err := buf.WriteString("\n"); err != nil {
 			return "", err
 		}
 	}
-	return buf.String(), err
+	return buf.String(), nil
 }
 
 // Update reads in the current configuration and a target configuration from io.reader
@@ -167,22 +177,20 @@ func (c *Client) Get(namespace string, reader io.Reader) (string, error) {
 //  not present in the target configuration
 //
 // Namespace will set the namespaces
-func (c *Client) Update(namespace string, currentReader, targetReader io.Reader, recreate bool) error {
-	currentInfos, err := c.Build(namespace, currentReader)
+func (c *Client) Update(namespace string, originalReader, targetReader io.Reader, recreate bool, timeout int64, shouldWait bool) error {
+	original, err := c.Build(namespace, originalReader)
 	if err != nil {
 		return fmt.Errorf("failed decoding reader into objects: %s", err)
 	}
 
-	target := c.newBuilder(namespace, targetReader)
-	if target.Err() != nil {
-		return fmt.Errorf("failed decoding reader into objects: %s", target.Err())
+	target, err := c.Build(namespace, targetReader)
+	if err != nil {
+		return fmt.Errorf("failed decoding reader into objects: %s", err)
 	}
 
-	targetInfos := []*resource.Info{}
 	updateErrors := []string{}
 
 	err = target.Visit(func(info *resource.Info, err error) error {
-		targetInfos = append(targetInfos, info)
 		if err != nil {
 			return err
 		}
@@ -203,29 +211,43 @@ func (c *Client) Update(namespace string, currentReader, targetReader io.Reader,
 			return nil
 		}
 
-		currentObj, err := getCurrentObject(info, currentInfos)
+		originalInfo := original.Get(info)
+		if originalInfo == nil {
+			return fmt.Errorf("no resource with the name %s found", info.Name)
+		}
+
+		versionedObject, err := originalInfo.Mapping.ConvertToVersion(originalInfo.Object, originalInfo.Mapping.GroupVersionKind.GroupVersion())
 		if err != nil {
 			return err
 		}
 
-		if err := updateResource(c, info, currentObj, recreate); err != nil {
-			if alreadyExistErr, ok := err.(ErrAlreadyExists); ok {
-				log.Printf(alreadyExistErr.errorMsg)
-			} else {
-				log.Printf("error updating the resource %s:\n\t %v", info.Name, err)
-				updateErrors = append(updateErrors, err.Error())
-			}
+		if err := updateResource(c, info, versionedObject, recreate); err != nil {
+			log.Printf("error updating the resource %s:\n\t %v", info.Name, err)
+			updateErrors = append(updateErrors, err.Error())
 		}
 
 		return nil
 	})
 
-	if err != nil {
+	switch {
+	case err != nil:
 		return err
-	} else if len(updateErrors) != 0 {
+	case len(updateErrors) != 0:
 		return fmt.Errorf(strings.Join(updateErrors, " && "))
 	}
-	deleteUnwantedResources(currentInfos, targetInfos)
+
+	for _, info := range original.Difference(target) {
+		log.Printf("Deleting %s in %s...", info.Name, info.Namespace)
+		if err := deleteResource(c, info); err != nil {
+			log.Printf("Failed to delete %s, err: %s", info.Name, err)
+		}
+	}
+	if shouldWait {
+		err = c.waitForResources(time.Duration(timeout)*time.Second, target)
+	}
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -233,28 +255,19 @@ func (c *Client) Update(namespace string, currentReader, targetReader io.Reader,
 //
 // Namespace will set the namespace
 func (c *Client) Delete(namespace string, reader io.Reader) error {
-	return perform(c, namespace, reader, func(info *resource.Info) error {
+	infos, err := c.Build(namespace, reader)
+	if err != nil {
+		return err
+	}
+	return perform(c, namespace, infos, func(info *resource.Info) error {
 		log.Printf("Starting delete for %s %s", info.Name, info.Mapping.GroupVersionKind.Kind)
-
-		reaper, err := c.Reaper(info.Mapping)
-		if err != nil {
-			// If there is no reaper for this resources, delete it.
-			if kubectl.IsNoSuchReaperError(err) {
-				err := resource.NewHelper(info.Client, info.Mapping).Delete(info.Namespace, info.Name)
-				return skipIfNotFound(err)
-			}
-
-			return err
-		}
-
-		log.Printf("Using reaper for deleting %s", info.Name)
-		err = reaper.Stop(info.Namespace, info.Name, 0, nil)
+		err := deleteResource(c, info)
 		return skipIfNotFound(err)
 	})
 }
 
 func skipIfNotFound(err error) error {
-	if err != nil && errors.IsNotFound(err) {
+	if errors.IsNotFound(err) {
 		log.Printf("%v", err)
 		return nil
 	}
@@ -279,18 +292,18 @@ func watchTimeout(t time.Duration) ResourceActorFunc {
 //   ascertained by watching the Status fields in a job's output.
 //
 // Handling for other kinds will be added as necessary.
-func (c *Client) WatchUntilReady(namespace string, reader io.Reader, timeout int64) error {
+func (c *Client) WatchUntilReady(namespace string, reader io.Reader, timeout int64, shouldWait bool) error {
+	infos, err := c.Build(namespace, reader)
+	if err != nil {
+		return err
+	}
 	// For jobs, there's also the option to do poll c.Jobs(namespace).Get():
 	// https://github.com/adamreese/kubernetes/blob/master/test/e2e/job.go#L291-L300
-	return perform(c, namespace, reader, watchTimeout(time.Duration(timeout)*time.Second))
+	return perform(c, namespace, infos, watchTimeout(time.Duration(timeout)*time.Second))
 }
 
-func perform(c *Client, namespace string, reader io.Reader, fn ResourceActorFunc) error {
-	infos, err := c.Build(namespace, reader)
-	switch {
-	case err != nil:
-		return scrubValidationError(err)
-	case len(infos) == 0:
+func perform(c *Client, namespace string, infos Result, fn ResourceActorFunc) error {
+	if len(infos) == 0 {
 		return ErrNoObjectsVisited
 	}
 	for _, info := range infos {
@@ -302,16 +315,29 @@ func perform(c *Client, namespace string, reader io.Reader, fn ResourceActorFunc
 }
 
 func createResource(info *resource.Info) error {
-	_, err := resource.NewHelper(info.Client, info.Mapping).Create(info.Namespace, true, info.Object)
-	return err
+	obj, err := resource.NewHelper(info.Client, info.Mapping).Create(info.Namespace, true, info.Object)
+	if err != nil {
+		return err
+	}
+	info.Refresh(obj, true)
+	return nil
 }
 
-func deleteResource(info *resource.Info) error {
-	return resource.NewHelper(info.Client, info.Mapping).Delete(info.Namespace, info.Name)
+func deleteResource(c *Client, info *resource.Info) error {
+	reaper, err := c.Reaper(info.Mapping)
+	if err != nil {
+		// If there is no reaper for this resources, delete it.
+		if kubectl.IsNoSuchReaperError(err) {
+			return resource.NewHelper(info.Client, info.Mapping).Delete(info.Namespace, info.Name)
+		}
+		return err
+	}
+	log.Printf("Using reaper for deleting %s", info.Name)
+	return reaper.Stop(info.Namespace, info.Name, 0, nil)
 }
 
 func updateResource(c *Client, target *resource.Info, currentObj runtime.Object, recreate bool) error {
-	encoder := api.Codecs.LegacyCodec(registered.EnabledVersions()...)
+	encoder := c.JSONEncoder()
 	original, err := runtime.Encode(encoder, currentObj)
 	if err != nil {
 		return err
@@ -323,7 +349,8 @@ func updateResource(c *Client, target *resource.Info, currentObj runtime.Object,
 	}
 
 	if api.Semantic.DeepEqual(original, modified) {
-		return ErrAlreadyExists{target.Name}
+		log.Printf("Looks like there are no changes for %s", target.Name)
+		return nil
 	}
 
 	patch, err := strategicpatch.CreateTwoWayMergePatch(original, modified, currentObj)
@@ -333,33 +360,32 @@ func updateResource(c *Client, target *resource.Info, currentObj runtime.Object,
 
 	// send patch to server
 	helper := resource.NewHelper(target.Client, target.Mapping)
-	_, err = helper.Patch(target.Namespace, target.Name, api.StrategicMergePatchType, patch)
-
-	if err != nil {
+	var obj runtime.Object
+	if obj, err = helper.Patch(target.Namespace, target.Name, api.StrategicMergePatchType, patch); err != nil {
 		return err
 	}
 
 	if recreate {
-		kind := target.Mapping.GroupVersionKind.Kind
-
 		client, _ := c.ClientSet()
-		switch kind {
-		case "ReplicationController":
-			rc := currentObj.(*v1.ReplicationController)
-			err = recreatePods(client, target.Namespace, rc.Spec.Selector)
-		case "DaemonSet":
-			daemonSet := currentObj.(*v1beta1.DaemonSet)
-			err = recreatePods(client, target.Namespace, daemonSet.Spec.Selector.MatchLabels)
-		case "StatefulSet":
-			petSet := currentObj.(*apps.StatefulSet)
-			err = recreatePods(client, target.Namespace, petSet.Spec.Selector.MatchLabels)
-		case "ReplicaSet":
-			replicaSet := currentObj.(*v1beta1.ReplicaSet)
-			err = recreatePods(client, target.Namespace, replicaSet.Spec.Selector.MatchLabels)
-		}
+		return recreatePods(client, target.Namespace, extractSelector(currentObj))
 	}
+	target.Refresh(obj, true)
+	return nil
+}
 
-	return err
+func extractSelector(obj runtime.Object) map[string]string {
+	switch typed := obj.(type) {
+	case *v1.ReplicationController:
+		return typed.Spec.Selector
+	case *v1beta1.DaemonSet:
+		return typed.Spec.Selector.MatchLabels
+	case *apps.StatefulSet:
+		return typed.Spec.Selector.MatchLabels
+	case *v1beta1.ReplicaSet:
+		return typed.Spec.Selector.MatchLabels
+	default:
+		return nil
+	}
 }
 
 func recreatePods(client *internalclientset.Clientset, namespace string, selector map[string]string) error {
@@ -377,13 +403,7 @@ func recreatePods(client *internalclientset.Clientset, namespace string, selecto
 		log.Printf("Restarting pod: %v/%v", pod.Namespace, pod.Name)
 
 		// Delete each pod for get them restarted with changed spec.
-		err := client.Pods(pod.Namespace).Delete(pod.Name, &api.DeleteOptions{
-			Preconditions: &api.Preconditions{
-				UID: &pod.UID,
-			},
-		})
-
-		if err != nil {
+		if err := client.Pods(pod.Namespace).Delete(pod.Name, api.NewPreconditionDeleteOptions(string(pod.UID))); err != nil {
 			return err
 		}
 	}
@@ -432,6 +452,132 @@ func watchUntilReady(timeout time.Duration, info *resource.Info) error {
 	return err
 }
 
+func podsReady(pods []api.Pod) bool {
+	if len(pods) == 0 {
+		return true
+	}
+	for _, pod := range pods {
+		if !api.IsPodReady(&pod) {
+			return false
+		}
+	}
+	return true
+}
+
+func servicesReady(svc []api.Service) bool {
+	if len(svc) == 0 {
+		return true
+	}
+	for _, s := range svc {
+		if !api.IsServiceIPSet(&s) {
+			return false
+		}
+		// This checks if the service has a LoadBalancer and that balancer has an Ingress defined
+		if s.Spec.Type == api.ServiceTypeLoadBalancer && s.Status.LoadBalancer.Ingress == nil {
+			return false
+		}
+	}
+	return true
+}
+
+func volumesReady(vols []api.PersistentVolumeClaim) bool {
+	if len(vols) == 0 {
+		return true
+	}
+	for _, v := range vols {
+		if v.Status.Phase != api.ClaimBound {
+			return false
+		}
+	}
+	return true
+}
+
+func getPods(client *internalclientset.Clientset, namespace string, selector map[string]string) ([]api.Pod, error) {
+	list, err := client.Pods(namespace).List(api.ListOptions{
+		FieldSelector: fields.Everything(),
+		LabelSelector: labels.Set(selector).AsSelector(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return list.Items, nil
+}
+
+// waitForResources polls to get the current status of all pods, PVCs, and Services
+// until all are ready or a timeout is reached
+func (c *Client) waitForResources(timeout time.Duration, created Result) error {
+	log.Printf("beginning wait for resources with timeout of %v", timeout)
+	client, _ := c.ClientSet()
+	return wait.Poll(2*time.Second, timeout, func() (bool, error) {
+		pods := []api.Pod{}
+		services := []api.Service{}
+		pvc := []api.PersistentVolumeClaim{}
+		for _, v := range created {
+			switch value := v.Object.(type) {
+			case (*api.ReplicationController):
+				list, err := getPods(client, value.Namespace, value.Spec.Selector)
+				if err != nil {
+					return false, err
+				}
+				pods = append(pods, list...)
+			case (*api.Pod):
+				pod, err := client.Pods(value.Namespace).Get(value.Name)
+				if err != nil {
+					return false, err
+				}
+				pods = append(pods, *pod)
+			case (*extensions.Deployment):
+				// Get the RS children first
+				rs, err := client.ReplicaSets(value.Namespace).List(api.ListOptions{
+					FieldSelector: fields.Everything(),
+					LabelSelector: labels.Set(value.Spec.Selector.MatchLabels).AsSelector(),
+				})
+				if err != nil {
+					return false, err
+				}
+				for _, r := range rs.Items {
+					list, err := getPods(client, value.Namespace, r.Spec.Selector.MatchLabels)
+					if err != nil {
+						return false, err
+					}
+					pods = append(pods, list...)
+				}
+			case (*extensions.DaemonSet):
+				list, err := getPods(client, value.Namespace, value.Spec.Selector.MatchLabels)
+				if err != nil {
+					return false, err
+				}
+				pods = append(pods, list...)
+			case (*apps.StatefulSet):
+				list, err := getPods(client, value.Namespace, value.Spec.Selector.MatchLabels)
+				if err != nil {
+					return false, err
+				}
+				pods = append(pods, list...)
+			case (*extensions.ReplicaSet):
+				list, err := getPods(client, value.Namespace, value.Spec.Selector.MatchLabels)
+				if err != nil {
+					return false, err
+				}
+				pods = append(pods, list...)
+			case (*api.PersistentVolumeClaim):
+				claim, err := client.PersistentVolumeClaims(value.Namespace).Get(value.Name)
+				if err != nil {
+					return false, err
+				}
+				pvc = append(pvc, *claim)
+			case (*api.Service):
+				svc, err := client.Services(value.Namespace).Get(value.Name)
+				if err != nil {
+					return false, err
+				}
+				services = append(services, *svc)
+			}
+		}
+		return podsReady(pods) && servicesReady(services) && volumesReady(pvc), nil
+	})
+}
+
 // waitForJob is a helper that waits for a job to complete.
 //
 // This operates on an event returned from a watcher.
@@ -453,41 +599,11 @@ func waitForJob(e watch.Event, name string) (bool, error) {
 	return false, nil
 }
 
-func deleteUnwantedResources(currentInfos, targetInfos []*resource.Info) {
-	for _, cInfo := range currentInfos {
-		if _, ok := findMatchingInfo(cInfo, targetInfos); !ok {
-			log.Printf("Deleting %s...", cInfo.Name)
-			if err := deleteResource(cInfo); err != nil {
-				log.Printf("Failed to delete %s, err: %s", cInfo.Name, err)
-			}
-		}
-	}
-}
-
-func getCurrentObject(target *resource.Info, infos []*resource.Info) (runtime.Object, error) {
-	if found, ok := findMatchingInfo(target, infos); ok {
-		return found.Mapping.ConvertToVersion(found.Object, found.Mapping.GroupVersionKind.GroupVersion())
-	}
-	return nil, fmt.Errorf("no resource with the name %s found", target.Name)
-}
-
-// isMatchingInfo returns true if infos match on Name and Kind.
-func isMatchingInfo(a, b *resource.Info) bool {
-	return a.Name == b.Name && a.Mapping.GroupVersionKind.Kind == b.Mapping.GroupVersionKind.Kind
-}
-
-// findMatchingInfo returns the first object that matches target.
-func findMatchingInfo(target *resource.Info, infos []*resource.Info) (*resource.Info, bool) {
-	for _, info := range infos {
-		if isMatchingInfo(target, info) {
-			return info, true
-		}
-	}
-	return nil, false
-}
-
 // scrubValidationError removes kubectl info from the message
 func scrubValidationError(err error) error {
+	if err == nil {
+		return nil
+	}
 	const stopValidateMessage = "if you choose to ignore these errors, turn validation off with --validate=false"
 
 	if strings.Contains(err.Error(), stopValidateMessage) {
