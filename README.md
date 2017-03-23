@@ -9,7 +9,7 @@ https://github.com/kubernetes/helm/issues/1586#issuecomment-268055664
 ## Status
 This project is abandoned because Tiller's authorization requirements can't be implemented using a TPR controller. You can find more details here: https://github.com/kubernetes/helm/issues/1586#issuecomment-277666828
 
-The new plan is to add auth support to Tiller directly. Here is the ticker for that: https://github.com/kubernetes/helm/issues/1918
+The new plan is to add auth support to Tiller directly. Here is the ticket for that: https://github.com/kubernetes/helm/issues/1918
 
 ## Build Instructions
 ```sh
